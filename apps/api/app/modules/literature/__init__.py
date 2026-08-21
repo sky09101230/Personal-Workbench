@@ -1,0 +1,1 @@
+"""Literature module boundary."""

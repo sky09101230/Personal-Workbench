@@ -1,0 +1,1 @@
+"""HTTP presentation for Literature."""
