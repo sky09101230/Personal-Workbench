@@ -1,0 +1,156 @@
+import { AlertCircle, LoaderCircle, Newspaper, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getNewsJson, postNewsJson } from "./api";
+import { FeedCard } from "./components/FeedCard";
+import type { FeedItemType, FeedPage, RefreshResult, Topic, TopicList } from "./types";
+import "./news.css";
+
+type TypeFilter = FeedItemType | "";
+
+const pageSize = 20;
+const tabs: { label: string; value: TypeFilter }[] = [
+  { label: "All", value: "" },
+  { label: "Papers", value: "paper" },
+  { label: "GitHub", value: "github_repo" },
+  { label: "Skills", value: "github_skill" },
+  { label: "AI News", value: "ai_news" },
+  { label: "X", value: "x_post" },
+];
+
+export function NewsPage() {
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [feed, setFeed] = useState<FeedPage | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
+  const [topicFilter, setTopicFilter] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(false);
+
+  const loadFeed = useCallback(async () => {
+    const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
+    if (typeFilter) params.set("type", typeFilter);
+    if (topicFilter) params.set("topic", topicFilter);
+    setLoading(true);
+    setError(false);
+    try {
+      setFeed(await getNewsJson<FeedPage>(`/api/news/feed?${params}`));
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [offset, topicFilter, typeFilter]);
+
+  useEffect(() => {
+    void getNewsJson<TopicList>("/api/news/topics")
+      .then((result) => setTopics(result.items))
+      .catch(() => setError(true));
+  }, []);
+
+  useEffect(() => {
+    void loadFeed();
+  }, [loadFeed]);
+
+  const topicNames = useMemo(
+    () => Object.fromEntries(topics.map((topic) => [topic.id, topic.name])),
+    [topics],
+  );
+
+  const refresh = async () => {
+    setRefreshing(true);
+    setError(false);
+    try {
+      await postNewsJson<RefreshResult>("/api/news/refresh");
+      const result = await getNewsJson<TopicList>("/api/news/topics");
+      setTopics(result.items);
+      if (offset !== 0) setOffset(0);
+      else await loadFeed();
+    } catch {
+      setError(true);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const selectType = (value: TypeFilter) => {
+    setTypeFilter(value);
+    setOffset(0);
+  };
+
+  const selectTopic = (value: string) => {
+    setTopicFilter(value);
+    setOffset(0);
+  };
+
+  return (
+    <section className="news-page">
+      <header className="news-header">
+        <div>
+          <h1>News</h1>
+          <p>Discover, filter, and browse external research signals.</p>
+        </div>
+        <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
+          <RefreshCw className={refreshing ? "spin" : ""} size={15} />
+          {refreshing ? "Refreshing" : "Refresh demo feed"}
+        </button>
+      </header>
+
+      <div className="news-controls">
+        <div className="news-tabs" role="tablist" aria-label="News item type">
+          {tabs.map((tab) => (
+            <button
+              className={typeFilter === tab.value ? "active" : ""}
+              type="button"
+              role="tab"
+              aria-selected={typeFilter === tab.value}
+              onClick={() => selectType(tab.value)}
+              key={tab.label}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <label className="topic-filter">
+          <span>Topic</span>
+          <select value={topicFilter} onChange={(event) => selectTopic(event.target.value)}>
+            <option value="">All topics</option>
+            {topics.map((topic) => <option value={topic.id} key={topic.id}>{topic.name}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <div className="news-feed-scroll">
+        {loading ? (
+          <NewsState icon={<LoaderCircle className="spin" size={22} />} title="Loading News" message="Reading the local News cache." />
+        ) : error ? (
+          <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached. Try again after restarting the changed services." />
+        ) : !feed || feed.items.length === 0 ? (
+          <NewsState icon={<Newspaper size={22} />} title="No feed items" message="Refresh the demo feed or choose a different type or Topic." />
+        ) : (
+          <div className="feed-list">
+            {feed.items.map((item) => <FeedCard item={item} topicNames={topicNames} key={item.id} />)}
+          </div>
+        )}
+      </div>
+
+      {feed && feed.total > pageSize ? (
+        <footer className="news-pagination">
+          <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Previous</button>
+          <span>{offset + 1}–{Math.min(offset + pageSize, feed.total)} of {feed.total}</span>
+          <button type="button" disabled={offset + pageSize >= feed.total} onClick={() => setOffset(offset + pageSize)}>Next</button>
+        </footer>
+      ) : null}
+    </section>
+  );
+}
+
+function NewsState({ icon, title, message }: { icon: React.ReactNode; title: string; message: string }) {
+  return (
+    <div className="news-state">
+      <span>{icon}</span>
+      <h2>{title}</h2>
+      <p>{message}</p>
+    </div>
+  );
+}
