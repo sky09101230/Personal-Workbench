@@ -2,6 +2,8 @@ import { Settings } from "lucide-react";
 import { moduleRegistry } from "../modules/registry";
 
 export function WorkbenchSidebar() {
+  const pathname = window.location.pathname;
+
   return (
     <aside className="sidebar" aria-label="Workbench navigation">
       <div className="brand-mark">
@@ -12,8 +14,11 @@ export function WorkbenchSidebar() {
       <nav className="module-nav">
         {moduleRegistry.map((module) => {
           const Icon = module.icon;
+          const active = pathname === module.path
+            || pathname.startsWith(`${module.path}/`)
+            || (module.id === "literature" && pathname === "/");
           return (
-            <a className="module-link active" href={`#${module.id}`} key={module.id}>
+            <a className={`module-link${active ? " active" : ""}`} href={module.path} key={module.id}>
               <Icon size={17} strokeWidth={1.8} />
               <span>{module.label}</span>
             </a>

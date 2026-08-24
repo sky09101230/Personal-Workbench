@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AppShell } from "../core/shell/AppShell";
 import { LiteraturePage } from "../modules/literature/LiteraturePage";
+import { NewsPage } from "../modules/news/NewsPage";
 
 type LiteratureStatus = {
   provider: string;
@@ -11,6 +12,8 @@ type LiteratureStatus = {
 export function App() {
   const [status, setStatus] = useState<LiteratureStatus | null>(null);
   const [apiError, setApiError] = useState(false);
+  const pathname = window.location.pathname;
+  const isNews = pathname === "/news" || pathname.startsWith("/news/");
 
   useEffect(() => {
     fetch("/api/literature/status")
@@ -24,7 +27,7 @@ export function App() {
 
   return (
     <AppShell>
-      <LiteraturePage status={status} apiError={apiError} />
+      {isNews ? <NewsPage /> : <LiteraturePage status={status} apiError={apiError} />}
     </AppShell>
   );
 }
