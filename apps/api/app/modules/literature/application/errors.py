@@ -16,3 +16,11 @@ class ProviderUnavailableError(LiteratureError):
 
 class InvalidCollectionIdentifierError(LiteratureError):
     pass
+
+
+class LiteratureResourceNotFoundError(LiteratureError):
+    pass
+
+
+class PdfUnavailableError(LiteratureError):
+    pass

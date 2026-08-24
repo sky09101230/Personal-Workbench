@@ -1,51 +1,47 @@
 # Personal Workbench
 
-Personal Workbench 是一个面向个人科研流程的本地工作台。当前版本提供 Literature 模块：通过后端连接 Zotero Web API v3，在浏览器中浏览文献集合、论文列表与元数据，并使用 SQLite 保存可增量更新的本地元数据缓存。
+Personal Workbench 是一个面向个人科研流程的本地工作台。当前版本提供 Literature V0.1：通过后端连接 Zotero Web API v3，完成文献浏览、搜索筛选、Notes/annotation metadata 同步和受保护的 PDF 阅读。
 
-## 当前功能
+## Literature V0.1
 
-- React 工作台界面：集合树、论文列表、作者/期刊/年份/DOI/标签详情。
-- Zotero 只读接入：凭据仅保留在 FastAPI 后端，不发送到浏览器。
-- 本地 SQLite 缓存：首次同步保存完整快照，后续同步按 Zotero library version 增量合并更新和删除。
-- 缓存优先读取：完成首次同步后，集合和论文查询直接读取本地缓存。
-- 明确的连接状态和错误反馈：未配置凭据、鉴权失败和上游不可用均由 Workbench API 统一返回。
+- 三栏文库：首页包含 Collections、分页论文列表和详情区域。
+- 缓存搜索与筛选：支持标题/作者搜索，以及年份、Journal / Venue、Tags、Collection 筛选。
+- 完整详情：显示 Title、Authors、Abstract、Year、Journal / Venue、DOI、Tags 与所属 Collections。
+- Zotero Notes：同步 item Notes 和可映射到论文的 PDF annotation metadata，只读展示，不在 Workbench 创建或编辑 Note。
+- Attachments：区分可读取的 Zotero 存储 PDF、linked file、非 PDF 和 provider 当前无法访问的附件。
+- PDF Reader：独立 `/literature/papers/:id/reader` 页面，使用 PDF.js，支持翻页、页码跳转、缩放、页面适配和下载，并提供可开关的只读 Notes 侧栏。
+- 手动同步：页面显示最后同步时间和 syncing/success/failed 状态；失败时继续读取上一份 SQLite cache。
 
-> 当前边界：PDF 阅读和笔记按钮仅为界面占位，尚不可用；Web 界面的“Refresh”会重新读取当前数据，但不会触发 `POST /api/literature/sync`。
+不在 Literature V0.1 范围内：全文 PDF 搜索、AI/RAG/Embedding、知识图谱、推荐、自定义 PDF 批注编辑、多用户权限和后台定时同步。
 
-## 技术栈
+## 技术栈与结构
 
-- Backend: Python、FastAPI、HTTPX、SQLite
-- Frontend: React 19、TypeScript、Vite 7
-- Tests: pytest
-
-## 项目结构
+- Backend：Python、FastAPI、HTTPX、SQLite
+- Frontend：React 19、TypeScript、Vite 7、PDF.js
+- Tests：pytest
 
 ```text
 apps/
 ├── api/
-│   ├── app/core/                       # 配置等共享基础设施
+│   ├── app/core/
 │   ├── app/modules/literature/
-│   │   ├── domain/                     # 通用文献领域模型
-│   │   ├── application/                # 用例、端口与同步逻辑
-│   │   ├── infrastructure/
-│   │   │   ├── cache/                  # SQLite 元数据缓存
-│   │   │   └── providers/zotero/       # Zotero Web API v3 适配器
-│   │   └── presentation/               # FastAPI 路由
+│   │   ├── domain/
+│   │   ├── application/
+│   │   ├── infrastructure/cache/
+│   │   ├── infrastructure/providers/zotero/
+│   │   └── presentation/
 │   └── tests/
-└── web/
-    └── src/
-        ├── app/                         # 应用组合
-        ├── core/                        # 工作台外壳与模块注册
-        └── modules/literature/          # Literature 界面
+└── web/src/
+    ├── app/
+    ├── core/
+    └── modules/literature/
 ```
 
-后端通过 application port 隔离领域逻辑与 Zotero 实现；浏览器只调用 Workbench API，不直接访问 Zotero。
+浏览器只调用 /api/literature/*；Zotero URL、请求 Header 和 API Key 只存在于 Literature 的后端 provider。
 
 ## 本地运行
 
-### 1. 准备环境
-
-需要 Windows、Python 3.10+、Node.js（满足 Vite 7 的运行要求）和 npm。
+需要 Windows、Python 3.10+、Node.js 和 npm。
 
 ```powershell
 py -m venv .venv
@@ -54,22 +50,18 @@ npm.cmd --prefix apps\web install
 Copy-Item .env.example .env
 ```
 
-编辑 `.env`，填写 Zotero 凭据：
+在 `.env` 中配置：
 
 ```dotenv
 DATABASE_URL=sqlite:///./data/workbench.db
 CORS_ORIGINS=http://localhost:5173
 ZOTERO_USER_ID=你的数字用户 ID
-ZOTERO_API_KEY=你的 API Key
+ZOTERO_API_KEY=具有目标个人文库读取权限的 API Key
 ```
 
-`ZOTERO_USER_ID` 是 Zotero API Keys 页面显示的数字 user ID，不是用户名。`.env` 已被 Git 忽略，请勿提交凭据。
+`ZOTERO_USER_ID` 是 Zotero API Keys 页面显示的数字 user ID，不是用户名。`.env` 已被 Git 忽略，不要提交凭据。
 
-### 2. 启动服务
-
-最简方式是在仓库根目录双击 `start-workbench.cmd`。脚本会在 Windows Terminal 中分别启动 API 和 Web，并打开 `http://localhost:5173`。
-
-也可以在两个 PowerShell 窗口中手动运行：
+在两个 PowerShell 窗口分别运行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps\api --reload --env-file .env
@@ -79,54 +71,61 @@ ZOTERO_API_KEY=你的 API Key
 npm.cmd --prefix apps\web run dev -- --open
 ```
 
-- Web: `http://localhost:5173`
-- API: `http://localhost:8000`
-- API 文档: `http://localhost:8000/docs`
+也可以在仓库根目录双击 `start-workbench.cmd`。Web 默认位于 `http://localhost:5173`，API 位于 `http://localhost:8000`，Vite 将 `/api` 代理到后端。
 
-Vite 会把浏览器发出的 `/api` 请求代理到 `http://localhost:8000`。
+## 同步行为
 
-## 同步 Zotero
+在 Literature 页点击 **Sync Zotero**：
 
-服务启动后，在另一个 PowerShell 窗口执行：
+- 新数据库或 schema v2 升级后的第一次同步执行 full sync，分页读取 Collections、顶层文献和 Note/Attachment/annotation 子项，并在同一 SQLite 事务中替换 metadata 快照。
+- 后续同步使用保存的 Zotero `library_version` 请求增量变更和删除记录。
+- 同步成功后页面重新加载当前 Collections、筛选项、论文和详情。
+- 同步失败时状态标为 failed，但上一份 Papers/Collections/Notes/Attachment metadata cache 保持可读。
+
+也可以直接调用：
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/literature/sync
 ```
 
-- 本地还没有同步状态时执行完整同步。
-- 已保存 `library_version` 时执行增量同步。
-- 同步失败时保留上一份可读缓存，并将同步状态标记为失败。
-
-不执行同步也可以浏览 Zotero：当本地缓存为空时，查询会回退到 Zotero Web API 的实时只读请求。
 
 ## API
 
 | Method | Path | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/health` | API 健康检查 |
-| `GET` | `/api/literature/status` | Provider 配置与同步状态 |
-| `POST` | `/api/literature/sync` | 执行首次或增量同步 |
-| `GET` | `/api/literature/collections` | 获取集合列表 |
-| `GET` | `/api/literature/papers?collection_id=<opaque-id>&limit=50&offset=0` | 分页获取论文 |
+| `GET` | `/api/literature/status` | Provider 配置、同步状态、最后同步时间和 library version |
+| `POST` | `/api/literature/sync` | 执行 full 或 incremental sync |
+| `GET` | `/api/literature/collections` | 读取缓存 Collections |
+| `GET` | `/api/literature/filters` | 读取缓存年份、Journal / Venue 和 Tags 选项 |
+| `GET` | `/api/literature/papers` | 分页搜索/筛选缓存论文；参数为 `query`、`author`、`year`、`journal`、`tag`、`collection_id`、`limit`、`offset` |
+| `GET` | `/api/literature/papers/{id}` | 读取论文详情、所属 Collections 和 PDF availability |
+| `GET` | `/api/literature/papers/{id}/notes` | 读取同步后的只读 Notes/annotation metadata |
+| `GET` | `/api/literature/papers/{id}/attachments` | 读取 Attachment metadata 和 availability |
+| `GET` | `/api/literature/papers/{id}/pdf` | 后端保护的 PDF stream，支持 Range 请求 |
+| `GET` | `/api/literature/papers/{id}/pdf/download` | 下载 PDF |
 
-`collection_id` 是 Workbench 返回的不透明标识，请勿自行拼接。
+所有 Literature id 与 collection_id 都是 Workbench 返回的不透明标识，不要自行拼接。
+
+## PDF 可用性限制
+
+- `imported_file` / `imported_url` 且 `contentType=application/pdf` 的 Zotero 存储附件可尝试通过 Web API `/file` 读取。
+- `linked_file` 指向运行 Zotero Desktop 的本地路径，Zotero Web API 不提供该文件，Workbench 会明确显示不可用。
+- 使用 WebDAV 同步时，附件 metadata 可能存在，但最新 binary 只在 WebDAV；若 Zotero `/file` 无法返回文件，Reader/下载会显示 `pdf_unavailable`。
+- PDF binary 按需从 Zotero 代理，不写入 SQLite；浏览器不会接触 Zotero API Key。
 
 ## 验证
 
-运行后端测试：
-
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q apps\api\tests --basetemp .venv\tmp\pytest -p no:cacheprovider
-```
-
-验证前端生产构建：
-
-```powershell
 npm.cmd --prefix apps\web run build
+git diff --check
 ```
 
-## 安全说明
+后端测试覆盖 Literature cache、sync、搜索筛选、Notes/annotation metadata 和 PDF 边界。前端当前没有测试 runner；production build 只验证类型和打包，不等同于浏览器交互测试。
 
-- Zotero API Key 仅通过后端环境变量读取。
-- `.env`、SQLite 数据库、虚拟环境、依赖目录和构建输出不会提交到 Git。
-- 当前 Zotero Provider 只实现读取与同步，不会修改 Zotero 云端文献库。
+## 安全边界
+
+- `.env`、Zotero credentials、SQLite 数据库、虚拟环境、依赖目录和 build 输出不得提交。
+- Provider 只读访问 Zotero；Workbench V0.1 不创建或修改 Zotero 文献、Notes、annotations 或附件。
+- Literature SQLite 只保存 metadata 与 Note 内容，不保存 PDF binary，也不是第二套文献 source of truth。

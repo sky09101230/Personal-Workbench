@@ -3,10 +3,13 @@ import sqlite3
 
 from app.modules.literature.application.service import LiteratureService
 from app.modules.literature.domain.models import (
+    Attachment,
     ChangedPaper,
     Collection,
     ExternalReference,
     LibraryChanges,
+    LiteratureAssets,
+    Note,
     Paper,
     PaperPage,
 )
@@ -23,6 +26,8 @@ def test_full_sync_paginates_deduplicates_and_commits_snapshot(tmp_path) -> None
     assert result.collections == 2
     assert result.papers == 3
     assert result.library_version == "7"
+    assert result.notes == 1
+    assert result.attachments == 1
     assert provider.requests == [
         (None, 0),
         (None, 1),
@@ -40,12 +45,18 @@ def test_full_sync_paginates_deduplicates_and_commits_snapshot(tmp_path) -> None
         authors_json = connection.execute(
             "SELECT authors_json FROM literature_papers WHERE id = 'zotero:123:TOP'"
         ).fetchone()[0]
+        note_count = connection.execute("SELECT COUNT(*) FROM literature_notes").fetchone()[0]
+        attachment_count = connection.execute(
+            "SELECT COUNT(*) FROM literature_attachments"
+        ).fetchone()[0]
 
     assert paper_count == 3
     assert link_count == 3
     assert tag_count == 2
     assert state == ("zotero", "123", "7", "succeeded")
     assert json.loads(authors_json) == ["Ada Lovelace"]
+    assert note_count == 1
+    assert attachment_count == 1
 
 
 def test_sync_uses_stored_version_for_incremental_merge(tmp_path) -> None:
@@ -108,15 +119,15 @@ def test_reads_synced_library_from_cache_without_calling_provider(tmp_path) -> N
     assert len(provider.requests) == request_count
 
 
-def test_empty_cache_falls_back_to_provider(tmp_path) -> None:
+def test_empty_cache_returns_actionable_local_empty_state(tmp_path) -> None:
     database_path = tmp_path / "literature-empty-cache.db"
     repository = SQLiteLiteratureRepository(f"sqlite:///{database_path.as_posix()}")
     provider = _PagedProvider()
     service = LiteratureService(provider, repository)
 
-    assert service.list_collections()[0].name == "First collection"
-    assert service.list_papers().items[0].title == "Top-level paper"
-    assert provider.requests == [(None, 0)]
+    assert service.list_collections() == ()
+    assert service.list_papers().items == ()
+    assert provider.requests == []
 
 
 def test_failed_sync_keeps_previous_cache_readable(tmp_path) -> None:
@@ -170,6 +181,47 @@ def test_incremental_merge_is_visible_through_cache_reads(tmp_path) -> None:
     assert {paper.title for paper in page.items} == {"Updated top-level paper", "Collection paper"}
 
 
+def test_incremental_sync_upserts_and_deletes_notes_and_attachments(tmp_path) -> None:
+    database_path = tmp_path / "literature-assets.db"
+    repository = SQLiteLiteratureRepository(f"sqlite:///{database_path.as_posix()}")
+    provider = _PagedProvider()
+    service = LiteratureService(provider, repository)
+    service.full_sync(page_size=2)
+    provider.changes = LibraryChanges(
+        notes=(
+            Note(
+                id="zotero:123:NOTE2",
+                paper_id="zotero:123:TOP",
+                content="New note",
+                external_ref=_reference("NOTE2"),
+            ),
+        ),
+        attachments=(
+            Attachment(
+                id="zotero:123:PDF",
+                paper_id="zotero:123:TOP",
+                filename="paper.pdf",
+                content_type="application/pdf",
+                downloadable=False,
+                link_mode="linked_file",
+                external_ref=_reference("PDF"),
+            ),
+        ),
+        deleted_item_ids=("zotero:123:NOTE",),
+        library_version="8",
+    )
+
+    result = service.sync()
+
+    assert result.notes == 1
+    assert result.attachments == 1
+    assert result.deleted_items == 1
+    assert [note.content for note in service.list_notes("zotero:123:TOP")] == ["New note"]
+    attachment = service.list_attachments("zotero:123:TOP")[0]
+    assert attachment.link_mode == "linked_file"
+    assert attachment.downloadable is False
+
+
 class _PagedProvider:
     name = "zotero"
     configured = True
@@ -215,6 +267,30 @@ class _PagedProvider:
         if self.fail_changes:
             raise RuntimeError("provider unavailable")
         return self.changes
+
+    def list_assets(self) -> LiteratureAssets:
+        return LiteratureAssets(
+            notes=(
+                Note(
+                    id="zotero:123:NOTE",
+                    paper_id="zotero:123:TOP",
+                    content="<p>Synced note</p>",
+                    external_ref=_reference("NOTE"),
+                ),
+            ),
+            attachments=(
+                Attachment(
+                    id="zotero:123:PDF",
+                    paper_id="zotero:123:TOP",
+                    filename="paper.pdf",
+                    content_type="application/pdf",
+                    downloadable=True,
+                    link_mode="imported_file",
+                    external_ref=_reference("PDF"),
+                ),
+            ),
+            library_version="7",
+        )
 
 
 def _reference(key: str) -> ExternalReference:

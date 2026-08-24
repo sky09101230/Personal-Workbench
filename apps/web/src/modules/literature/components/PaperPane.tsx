@@ -7,20 +7,32 @@ type PaperPaneProps = {
   dataError: boolean;
   heading: string;
   loading: boolean;
+  notConfigured: boolean;
+  notSynced: boolean;
+  offset: number;
+  pageSize: number;
   papers: Paper[];
   selectedPaperId: string | null;
   totalPapers: number;
   onSelect: (paperId: string) => void;
+  onPageChange: (offset: number) => void;
+  onSync: () => void;
 };
 
 export function PaperPane({
   dataError,
   heading,
   loading,
+  notConfigured,
+  notSynced,
+  offset,
+  pageSize,
   papers,
   selectedPaperId,
   totalPapers,
   onSelect,
+  onPageChange,
+  onSync,
 }: PaperPaneProps) {
   return (
     <section className="workspace-pane paper-pane" aria-label="Paper list">
@@ -29,6 +41,8 @@ export function PaperPane({
         <WorkspaceState icon={<RefreshCw size={20} className="spin" />} title="Loading your library" detail="Reading collections and paper metadata." />
       ) : dataError ? (
         <WorkspaceState icon={<AlertCircle size={20} />} title="Library unavailable" detail="Check the API service and Zotero permissions, then refresh." />
+      ) : notConfigured && totalPapers === 0 ? (
+        <WorkspaceState icon={<AlertCircle size={20} />} title="Zotero is not configured" detail="Add ZOTERO_USER_ID and ZOTERO_API_KEY on the API service, then restart it." />
       ) : papers.length > 0 ? (
         <div className="pane-scroll papers-scroll">
           <div className="paper-rows">
@@ -57,20 +71,35 @@ export function PaperPane({
               </button>
             ))}
           </div>
+          {totalPapers > pageSize ? (
+            <nav className="paper-pagination" aria-label="Paper pages">
+              <button type="button" disabled={offset === 0} onClick={() => onPageChange(Math.max(0, offset - pageSize))}>Previous</button>
+              <span>{Math.floor(offset / pageSize) + 1} / {Math.ceil(totalPapers / pageSize)}</span>
+              <button type="button" disabled={offset + pageSize >= totalPapers} onClick={() => onPageChange(offset + pageSize)}>Next</button>
+            </nav>
+          ) : null}
         </div>
+      ) : notSynced ? (
+        <WorkspaceState
+          icon={<RefreshCw size={20} />}
+          title="Sync your Zotero library"
+          detail="Run the first manual sync to fill the local Literature cache."
+          action={<button className="action-button action-primary" type="button" onClick={onSync}>Sync Zotero</button>}
+        />
       ) : (
-        <WorkspaceState icon={<FileText size={20} />} title="No papers here" detail="This collection does not contain any top-level papers." />
+        <WorkspaceState icon={<FileText size={20} />} title="No matching papers" detail="This collection or filter combination has no cached papers." />
       )}
     </section>
   );
 }
 
-function WorkspaceState({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
+function WorkspaceState({ icon, title, detail, action }: { icon: ReactNode; title: string; detail: string; action?: ReactNode }) {
   return (
     <div className="workspace-state">
       <span className="state-icon" aria-hidden="true">{icon}</span>
       <h2>{title}</h2>
       <p>{detail}</p>
+      {action ? <div className="workspace-state-action">{action}</div> : null}
     </div>
   );
 }
