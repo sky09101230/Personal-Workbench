@@ -7,8 +7,14 @@ from app.modules.news.domain.models import FeedItem, FeedItemType, FeedPage, Top
 class NewsSourcePort(Protocol):
     name: str
 
-    def fetch_items(self) -> tuple[FeedItem, ...]:
+    def fetch_items(self, *, topics: tuple[Topic, ...]) -> tuple[FeedItem, ...]:
         """Return provider data normalized to the News domain contract."""
+        ...
+
+
+class NewsSummarizerPort(Protocol):
+    def summarize(self, items: tuple[FeedItem, ...]) -> tuple[FeedItem, ...]:
+        """Return summary-enriched items without changing their identity or order."""
         ...
 
 

@@ -3,10 +3,30 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.modules.news.application.service import NewsService
 from app.modules.news.infrastructure.cache.sqlite import SQLiteNewsRepository
-from app.modules.news.infrastructure.providers.demo.provider import DEMO_TOPICS, DemoNewsProvider
+from app.modules.news.infrastructure.providers.demo.provider import (
+    DEFAULT_TOPICS,
+    DEMO_TOPICS,
+    DemoNewsProvider,
+)
 
 
 client = TestClient(app)
+
+
+def test_default_news_topics_focus_on_diffractive_neural_networks() -> None:
+    assert [topic.id for topic in DEFAULT_TOPICS] == ["diffractive-neural-networks"]
+    assert DEFAULT_TOPICS[0].keywords == (
+        "diffractive neural network",
+        "diffractive deep neural network",
+        "diffractive deep network",
+        "diffractive optical neural network",
+        "D2NN",
+    )
+    assert DEFAULT_TOPICS[0].negative_keywords == (
+        "job posting",
+        "smart grid",
+        "electric vehicle",
+    )
 
 
 def test_news_refresh_and_filtered_feed_api(tmp_path) -> None:
@@ -65,5 +85,6 @@ def test_news_refresh_returns_stable_source_error(tmp_path) -> None:
 class _FailingProvider:
     name = "broken"
 
-    def fetch_items(self):
+    def fetch_items(self, *, topics):
+        del topics
         raise RuntimeError("private upstream response")

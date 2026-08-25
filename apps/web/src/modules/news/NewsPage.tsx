@@ -92,7 +92,7 @@ export function NewsPage() {
         </div>
         <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
           <RefreshCw className={refreshing ? "spin" : ""} size={15} />
-          {refreshing ? "Refreshing" : "Refresh demo feed"}
+          {refreshing ? "Refreshing" : "Refresh papers"}
         </button>
       </header>
 
@@ -126,7 +126,7 @@ export function NewsPage() {
         ) : error ? (
           <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached. Try again after restarting the changed services." />
         ) : !feed || feed.items.length === 0 ? (
-          <NewsState icon={<Newspaper size={22} />} title="No feed items" message="Refresh the demo feed or choose a different type or Topic." />
+          <NewsState icon={<Newspaper size={22} />} title="No feed items" message="Refresh the paper feed or choose a different type or Topic." />
         ) : (
           <div className="feed-list">
             {feed.items.map((item) => <FeedCard item={item} topicNames={topicNames} key={item.id} />)}

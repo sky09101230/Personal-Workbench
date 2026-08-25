@@ -8,7 +8,9 @@ from app.modules.literature.infrastructure.providers.zotero.provider import Zote
 from app.modules.literature.presentation.router import router as literature_router
 from app.modules.news.application.service import NewsService
 from app.modules.news.infrastructure.cache.sqlite import SQLiteNewsRepository
-from app.modules.news.infrastructure.providers.demo.provider import DEMO_TOPICS, DemoNewsProvider
+from app.modules.news.infrastructure.providers.demo.provider import DEFAULT_TOPICS
+from app.modules.news.infrastructure.providers.openalex.provider import OpenAlexPaperProvider
+from app.modules.news.infrastructure.summarizers.deepseek import DeepSeekPaperSummarizer
 from app.modules.news.presentation.router import router as news_router
 
 
@@ -28,9 +30,10 @@ def create_app() -> FastAPI:
         SQLiteLiteratureRepository(settings.database_url),
     )
     app.state.news_service = NewsService(
-        providers=(DemoNewsProvider(),),
+        providers=(OpenAlexPaperProvider(settings),),
         repository=SQLiteNewsRepository(settings.database_url),
-        topics=DEMO_TOPICS,
+        topics=DEFAULT_TOPICS,
+        summarizer=DeepSeekPaperSummarizer(settings),
     )
 
     @app.get("/api/health", tags=["core"])

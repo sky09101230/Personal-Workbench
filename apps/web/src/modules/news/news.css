@@ -21,7 +21,9 @@
 .feed-card-heading a { display: grid; flex: 0 0 auto; place-items: center; width: 30px; height: 30px; border: 1px solid var(--border); border-radius: 5px; color: var(--text-secondary); }
 .feed-card-heading a:hover { border-color: #b7cecc; color: var(--accent); }
 .feed-authors { margin: 4px 0 0; color: var(--text-tertiary); font-size: 11px; }
-.feed-summary { margin: 11px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.58; }
+.feed-summary-block { margin-top: 11px; }
+.feed-summary-label { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 5px; color: var(--accent); font-size: 10px; font-weight: 600; }
+.feed-summary { display: -webkit-box; overflow: hidden; margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.58; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .feed-card-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 22px; margin-top: 14px; }
 .feed-topics { display: flex; flex-wrap: wrap; gap: 5px; }
 .feed-topics span { border: 1px solid #e0e8e6; border-radius: 4px; background: #f7faf9; color: #6c7c7d; padding: 3px 6px; font-size: 10px; }

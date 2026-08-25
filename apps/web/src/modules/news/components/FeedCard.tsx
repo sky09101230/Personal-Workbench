@@ -20,6 +20,7 @@ export function FeedCard({
   const presentation = typePresentation[item.type];
   const Icon = presentation.icon;
   const detail = typeDetail(item);
+  const aiSummary = item.metadata.summary_kind === "ai";
 
   return (
     <article className={`feed-card feed-card-${item.type}`}>
@@ -37,7 +38,12 @@ export function FeedCard({
           <ExternalLink size={15} />
         </a>
       </div>
-      {item.summary ? <p className="feed-summary">{item.summary}</p> : null}
+      {item.summary ? (
+        <div className="feed-summary-block">
+          {aiSummary ? <span className="feed-summary-label"><Sparkles size={11} />AI summary</span> : null}
+          <p className="feed-summary">{item.summary}</p>
+        </div>
+      ) : null}
       <div className="feed-card-footer">
         <div className="feed-topics">
           {item.topics.map((topic) => <span key={topic}>{topicNames[topic] ?? topic}</span>)}
@@ -49,7 +55,14 @@ export function FeedCard({
 }
 
 function typeDetail(item: FeedItem): string | null {
-  if (item.type === "paper" && typeof item.metadata.venue === "string") return item.metadata.venue;
+  if (item.type === "paper") {
+    const venue = typeof item.metadata.venue === "string" ? item.metadata.venue : null;
+    const doi = typeof item.metadata.doi === "string" ? `DOI ${item.metadata.doi}` : null;
+    const citations = typeof item.metadata.cited_by_count === "number"
+      ? `${item.metadata.cited_by_count} citations`
+      : null;
+    return [venue, doi, citations].filter(Boolean).join(" | ") || null;
+  }
   if (item.type === "github_repo") {
     const language = typeof item.metadata.language === "string" ? item.metadata.language : null;
     const stars = typeof item.metadata.stars === "number" ? `${item.metadata.stars} stars` : null;

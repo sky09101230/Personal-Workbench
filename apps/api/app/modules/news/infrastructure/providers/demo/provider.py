@@ -3,19 +3,35 @@ from datetime import datetime, timezone
 from app.modules.news.domain.models import FeedItem, FeedItemType, Topic
 
 
+DEFAULT_TOPICS = (
+    Topic(
+        id="diffractive-neural-networks",
+        name="Diffractive Neural Networks",
+        keywords=(
+            "diffractive neural network",
+            "diffractive deep neural network",
+            "diffractive deep network",
+            "diffractive optical neural network",
+            "D2NN",
+        ),
+        negative_keywords=("job posting", "smart grid", "electric vehicle"),
+        enabled_sources=("demo", "openalex"),
+    ),
+)
+
 DEMO_TOPICS = (
     Topic(
         id="optical-ml",
         name="Optical ML",
         keywords=("optical", "diffractive"),
         negative_keywords=("job posting",),
-        enabled_sources=("demo",),
+        enabled_sources=("demo", "openalex"),
     ),
     Topic(
         id="research-tools",
         name="Research Tools",
         keywords=("research", "repository", "skill", "literature"),
-        enabled_sources=("demo",),
+        enabled_sources=("demo", "openalex"),
     ),
 )
 
@@ -25,7 +41,8 @@ class DemoNewsProvider:
 
     name = "demo"
 
-    def fetch_items(self) -> tuple[FeedItem, ...]:
+    def fetch_items(self, *, topics: tuple[Topic, ...]) -> tuple[FeedItem, ...]:
+        del topics
         fetched_at = datetime.now(timezone.utc).isoformat()
         return (
             FeedItem(

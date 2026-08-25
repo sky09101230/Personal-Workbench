@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from app.modules.news.application.errors import InvalidFeedItemError, NewsError, NewsSourceError
-from app.modules.news.application.ports import NewsRepository, NewsSourcePort
+from app.modules.news.application.ports import NewsRepository, NewsSourcePort, NewsSummarizerPort
 from app.modules.news.domain.models import FeedItem, FeedItemType, FeedPage, RefreshResult, Topic
 
 
@@ -11,6 +11,7 @@ class NewsService:
     providers: tuple[NewsSourcePort, ...]
     repository: NewsRepository
     topics: tuple[Topic, ...] = ()
+    summarizer: NewsSummarizerPort | None = None
 
     def list_feed(
         self,
@@ -31,22 +32,26 @@ class NewsService:
         return self.topics
 
     def refresh(self) -> RefreshResult:
-        items: list[FeedItem] = []
+        fetched = 0
+        items_by_id: dict[str, FeedItem] = {}
         for provider in self.providers:
             try:
-                provider_items = provider.fetch_items()
+                provider_items = provider.fetch_items(topics=self.topics)
             except NewsError:
                 raise
             except Exception as error:
                 raise NewsSourceError(f"News source '{provider.name}' could not be refreshed") from error
             for item in provider_items:
+                fetched += 1
                 _validate_item(provider, item)
-                items.append(item)
+                items_by_id.setdefault(item.id, item)
 
+        items = tuple(items_by_id.values())
         item_topics = {
             item.id: tuple(topic.id for topic in self.topics if _matches_topic(item, topic))
             for item in items
         }
+        items = _summarize_relevant_papers(items, item_topics, self.summarizer)
         stored = self.repository.save_refresh(
             items=items,
             topics=self.topics,
@@ -54,11 +59,29 @@ class NewsService:
         )
         return RefreshResult(
             providers=tuple(provider.name for provider in self.providers),
-            fetched=len(items),
+            fetched=fetched,
             stored=stored,
             topic_matches=sum(len(matches) for matches in item_topics.values()),
             refreshed_at=datetime.now(timezone.utc).isoformat(),
         )
+
+
+def _summarize_relevant_papers(
+    items: tuple[FeedItem, ...],
+    item_topics: dict[str, tuple[str, ...]],
+    summarizer: NewsSummarizerPort | None,
+) -> tuple[FeedItem, ...]:
+    if summarizer is None:
+        return items
+    candidates = tuple(
+        item
+        for item in items
+        if item.type is FeedItemType.PAPER and item.summary and item_topics.get(item.id)
+    )
+    if not candidates:
+        return items
+    summarized_by_id = {item.id: item for item in summarizer.summarize(candidates)}
+    return tuple(summarized_by_id.get(item.id, item) for item in items)
 
 
 def _validate_item(provider: NewsSourcePort, item: FeedItem) -> None:
