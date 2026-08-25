@@ -1,23 +1,29 @@
 import re
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
 from app.core.config import Settings
 from app.modules.literature.application.errors import (
     InvalidCollectionIdentifierError,
+    PdfUnavailableError,
     ProviderAuthenticationError,
     ProviderNotConfiguredError,
     ProviderUnavailableError,
 )
 from app.modules.literature.domain.models import (
+    Attachment,
     ChangedPaper,
     Collection,
     ExternalReference,
     LibraryChanges,
+    LiteratureAssets,
+    Note,
     Paper,
     PaperPage,
+    ProviderFile,
 )
 
 API_BASE_URL = "https://api.zotero.org"
@@ -99,6 +105,9 @@ class ZoteroWebProvider:
                 "includeTrashed": "1",
             },
         )
+        changed_assets, assets_version = self._list_assets_with_version(
+            params={"format": "json", "since": since},
+        )
         deleted_payload, deleted_response = self._request_payload(
             "deleted",
             params={"format": "json", "since": since},
@@ -116,6 +125,11 @@ class ZoteroWebProvider:
             and not self._is_trashed(record)
         )
         library_id = self._settings.zotero_user_id
+        trashed_paper_ids = tuple(
+            self._resource_id(library_id, self._reference(record, self._data(record)).item_key)
+            for record in changed_items
+            if self._is_trashed(record)
+        )
         deleted_collection_ids = tuple(
             self._resource_id(library_id, key)
             for key in self._deleted_keys(deleted_payload, "collections")
@@ -129,13 +143,142 @@ class ZoteroWebProvider:
             collections_version,
             items_version,
             deleted_response.headers.get("Last-Modified-Version"),
+            assets_version,
         )
         return LibraryChanges(
             collections=tuple(self._map_collection(record) for record in changed_collections),
             papers=changed_papers,
+            notes=changed_assets.notes,
+            attachments=changed_assets.attachments,
             deleted_collection_ids=deleted_collection_ids,
-            deleted_paper_ids=deleted_paper_ids,
+            deleted_item_ids=tuple(
+                dict.fromkeys(
+                    (*deleted_paper_ids, *trashed_paper_ids, *changed_assets.deleted_item_ids)
+                )
+            ),
             library_version=library_version,
+        )
+
+    def list_assets(self) -> LiteratureAssets:
+        assets, _ = self._list_assets_with_version(params={"format": "json"})
+        return assets
+
+    def open_attachment(
+        self,
+        attachment: Attachment,
+        *,
+        range_header: str | None = None,
+    ) -> ProviderFile:
+        reference = attachment.external_ref
+        if (
+            reference is None
+            or reference.provider != self.name
+            or reference.library_id != self.library_id
+            or not attachment.downloadable
+        ):
+            raise PdfUnavailableError("The PDF attachment is not available through Zotero Web API")
+
+        url = f"{API_BASE_URL}/users/{self.library_id}/items/{reference.item_key}/file"
+        request_headers = self._headers()
+        if range_header:
+            request_headers["Range"] = range_header
+        response = self._send_file_request(url, headers=request_headers)
+        redirected = False
+        if response.is_redirect:
+            location = response.headers.get("Location")
+            response.close()
+            redirect_url = urljoin(url, location) if location else ""
+            if urlparse(redirect_url).scheme != "https":
+                raise PdfUnavailableError("Zotero returned an invalid attachment redirect")
+            redirect_headers = {"Range": range_header} if range_header else {}
+            response = self._send_file_request(redirect_url, headers=redirect_headers)
+            redirected = True
+
+        if response.status_code in {401, 403}:
+            response.close()
+            if redirected:
+                raise PdfUnavailableError("The redirected Zotero PDF file is unavailable")
+            raise ProviderAuthenticationError("Zotero rejected the configured credentials")
+        if response.status_code in {404, 410}:
+            response.close()
+            raise PdfUnavailableError("The Zotero PDF file is unavailable")
+        if response.status_code not in {200, 206}:
+            status_code = response.status_code
+            response.close()
+            raise ProviderUnavailableError(f"Zotero returned HTTP {status_code} for an attachment")
+
+        return ProviderFile(
+            filename=attachment.filename or "paper.pdf",
+            content_type=response.headers.get("Content-Type") or "application/pdf",
+            chunks=response.iter_raw(),
+            status_code=response.status_code,
+            content_length=response.headers.get("Content-Length"),
+            content_range=response.headers.get("Content-Range"),
+            accept_ranges=response.headers.get("Accept-Ranges"),
+            close=response.close,
+        )
+
+    def _list_assets_with_version(
+        self,
+        *,
+        params: Mapping[str, str],
+    ) -> tuple[LiteratureAssets, str | None]:
+        records, library_version = self._list_all_with_version(
+            "items",
+            params={
+                **params,
+                "itemType": "note || attachment || annotation",
+                "includeTrashed": "1",
+            },
+        )
+        active_records = [record for record in records if not self._is_trashed(record)]
+        deleted_item_ids = tuple(
+            self._resource_id(
+                self.library_id,
+                self._reference(record, self._data(record)).item_key,
+            )
+            for record in records
+            if self._is_trashed(record)
+        )
+        attachment_parents = {
+            self._reference(record, self._data(record)).item_key: self._parent_key(record)
+            for record in active_records
+            if self._item_type(record) == "attachment" and self._parent_key(record)
+        }
+
+        attachments = tuple(
+            attachment
+            for record in active_records
+            if self._item_type(record) == "attachment"
+            if (attachment := self._map_attachment(record)) is not None
+        )
+        notes: list[Note] = []
+        for record in active_records:
+            item_type = self._item_type(record)
+            if item_type == "note":
+                note = self._map_note(record)
+            elif item_type == "annotation":
+                parent_attachment_key = self._parent_key(record)
+                paper_key = attachment_parents.get(parent_attachment_key or "")
+                if parent_attachment_key and not paper_key:
+                    parent_record = self._get_item(parent_attachment_key)
+                    paper_key = self._parent_key(parent_record)
+                    if paper_key:
+                        attachment_parents[parent_attachment_key] = paper_key
+                note = self._map_annotation(record, paper_key)
+            else:
+                continue
+            if note is not None:
+                notes.append(note)
+
+        return (
+            LiteratureAssets(
+                notes=tuple(notes),
+                attachments=attachments,
+                deleted_item_ids=deleted_item_ids,
+                library_version=library_version,
+            ),
+            library_version,
         )
 
     def _list_all(self, path: str) -> list[dict[str, Any]]:
@@ -187,10 +330,7 @@ class ZoteroWebProvider:
             response = self._client.get(
                 url,
                 params=params,
-                headers={
-                    "Zotero-API-Version": API_VERSION,
-                    "Zotero-API-Key": self._settings.zotero_api_key,
-                },
+                headers=self._headers(),
             )
         except httpx.RequestError as error:
             raise ProviderUnavailableError("Zotero could not be reached") from error
@@ -205,6 +345,29 @@ class ZoteroWebProvider:
         except ValueError as error:
             raise ProviderUnavailableError("Zotero returned invalid JSON") from error
         return payload, response
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Zotero-API-Version": API_VERSION,
+            "Zotero-API-Key": self._settings.zotero_api_key,
+        }
+
+    def _send_file_request(self, url: str, *, headers: Mapping[str, str]) -> httpx.Response:
+        self._require_configuration()
+        try:
+            request = self._client.build_request("GET", url, headers=headers)
+            return self._client.send(request, stream=True, follow_redirects=False)
+        except httpx.RequestError as error:
+            raise ProviderUnavailableError("Zotero attachment could not be reached") from error
+
+    def _get_item(self, item_key: str) -> Mapping[str, Any]:
+        payload, _ = self._request_payload(
+            f"items/{item_key}",
+            params={"format": "json"},
+        )
+        if not isinstance(payload, dict):
+            raise ProviderUnavailableError("Zotero returned an unexpected item response")
+        return payload
 
     def _require_configuration(self) -> None:
         if not self.configured:
@@ -250,6 +413,59 @@ class ZoteroWebProvider:
             external_ref=reference,
         )
 
+    def _map_note(self, record: Mapping[str, Any]) -> Note | None:
+        data = self._data(record)
+        parent_key = self._parent_key(record)
+        if not parent_key:
+            return None
+        reference = self._reference(record, data)
+        return Note(
+            id=self._resource_id(reference.library_id, reference.item_key),
+            paper_id=self._resource_id(reference.library_id, parent_key),
+            content=self._string(data.get("note")),
+            external_ref=reference,
+        )
+
+    def _map_annotation(self, record: Mapping[str, Any], paper_key: str | None) -> Note | None:
+        if not paper_key:
+            return None
+        data = self._data(record)
+        reference = self._reference(record, data)
+        text = self._optional_string(data.get("annotationText"))
+        comment = self._optional_string(data.get("annotationComment"))
+        content = "\n\n".join(value for value in (text, comment) if value)
+        return Note(
+            id=self._resource_id(reference.library_id, reference.item_key),
+            paper_id=self._resource_id(reference.library_id, paper_key),
+            content=content,
+            kind="annotation",
+            page_label=self._optional_string(data.get("annotationPageLabel")),
+            color=self._optional_string(data.get("annotationColor")),
+            external_ref=reference,
+        )
+
+    def _map_attachment(self, record: Mapping[str, Any]) -> Attachment | None:
+        data = self._data(record)
+        parent_key = self._parent_key(record)
+        if not parent_key:
+            return None
+        reference = self._reference(record, data)
+        content_type = self._optional_string(data.get("contentType"))
+        link_mode = self._optional_string(data.get("linkMode"))
+        filename = self._first_non_empty(data.get("filename"), data.get("title")) or "Attachment"
+        return Attachment(
+            id=self._resource_id(reference.library_id, reference.item_key),
+            paper_id=self._resource_id(reference.library_id, parent_key),
+            filename=filename,
+            content_type=content_type,
+            downloadable=(
+                content_type == "application/pdf"
+                and link_mode in {"imported_file", "imported_url"}
+            ),
+            link_mode=link_mode,
+            external_ref=reference,
+        )
+
     def _reference(self, record: Mapping[str, Any], data: Mapping[str, Any]) -> ExternalReference:
         key = record.get("key") or data.get("key")
         if not isinstance(key, str) or not key:
@@ -283,6 +499,12 @@ class ZoteroWebProvider:
             for key in collections
             if isinstance(key, str) and key
         )
+
+    @staticmethod
+    def _parent_key(record: Mapping[str, Any]) -> str | None:
+        data = record.get("data")
+        parent = data.get("parentItem") if isinstance(data, dict) else None
+        return parent if isinstance(parent, str) and parent else None
 
     @staticmethod
     def _is_trashed(record: Mapping[str, Any]) -> bool:

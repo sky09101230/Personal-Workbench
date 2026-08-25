@@ -6,12 +6,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.modules.literature.domain.models import (
+    Attachment,
     ChangedPaper,
     Collection,
     ExternalReference,
+    FilterOptions,
     LibraryChanges,
     LibraryState,
+    Note,
     Paper,
+    PaperDetail,
     PaperPage,
 )
 
@@ -130,6 +134,17 @@ _MIGRATIONS = (
             "CREATE INDEX literature_external_references_resource_idx ON literature_external_references(resource_type, resource_id)",
         ),
     ),
+    _Migration(
+        version=2,
+        statements=(
+            "SELECT 1",
+            "ALTER TABLE literature_notes ADD COLUMN kind TEXT NOT NULL DEFAULT 'note'",
+            "ALTER TABLE literature_notes ADD COLUMN page_label TEXT",
+            "ALTER TABLE literature_notes ADD COLUMN color TEXT",
+            "ALTER TABLE literature_attachments ADD COLUMN link_mode TEXT",
+            "UPDATE literature_library_state SET library_version = NULL, sync_state = 'not_started'",
+        ),
+    ),
 )
 
 
@@ -182,11 +197,15 @@ class SQLiteLiteratureRepository:
         collections: Iterable[Collection],
         papers: Iterable[Paper],
         collection_papers: Mapping[str, Iterable[str]],
+        notes: Iterable[Note],
+        attachments: Iterable[Attachment],
         library_version: str | None,
     ) -> None:
         self.ensure_schema()
         collection_items = tuple(collections)
         paper_items = tuple(papers)
+        note_items = tuple(notes)
+        attachment_items = tuple(attachments)
         synced_at = _utc_now()
 
         with sqlite3.connect(self._database_path) as connection:
@@ -240,13 +259,56 @@ class SQLiteLiteratureRepository:
                 )
                 connection.executemany(
                     """
+                    INSERT INTO literature_notes
+                        (id, paper_id, content, kind, page_label, color, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        (
+                            note.id,
+                            note.paper_id,
+                            note.content,
+                            note.kind,
+                            note.page_label,
+                            note.color,
+                            synced_at,
+                        )
+                        for note in note_items
+                    ),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO literature_attachments
+                        (id, paper_id, filename, content_type, downloadable, link_mode, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        (
+                            attachment.id,
+                            attachment.paper_id,
+                            attachment.filename,
+                            attachment.content_type,
+                            int(attachment.downloadable),
+                            attachment.link_mode,
+                            synced_at,
+                        )
+                        for attachment in attachment_items
+                    ),
+                )
+                connection.executemany(
+                    """
                     INSERT INTO literature_external_references
                         (resource_type, resource_id, provider, library_id, item_key)
                     VALUES (?, ?, ?, ?, ?)
                     """,
                     (
                         (resource_type, resource.id, reference.provider, reference.library_id, reference.item_key)
-                        for resource_type, resources in (("collection", collection_items), ("paper", paper_items))
+                        for resource_type, resources in (
+                            ("collection", collection_items),
+                            ("paper", paper_items),
+                            ("note", note_items),
+                            ("attachment", attachment_items),
+                        )
                         for resource in resources
                         for reference in (resource.external_ref,)
                         if reference is not None
@@ -317,6 +379,11 @@ class SQLiteLiteratureRepository:
         collection_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        query: str | None = None,
+        author: str | None = None,
+        year: int | None = None,
+        journal: str | None = None,
+        tag: str | None = None,
     ) -> PaperPage:
         """Read a paginated paper view from the metadata cache."""
         if not 1 <= limit <= 100:
@@ -329,65 +396,160 @@ class SQLiteLiteratureRepository:
         self.ensure_schema()
         with sqlite3.connect(self._database_path) as connection:
             connection.row_factory = sqlite3.Row
-            if collection_id is None:
-                total = connection.execute("SELECT COUNT(*) FROM literature_papers").fetchone()[0]
-                rows = connection.execute(
-                    """
-                    SELECT
-                        p.id,
-                        p.title,
-                        p.authors_json,
-                        p.abstract,
-                        p.year,
-                        p.journal,
-                        p.doi,
-                        er.provider,
-                        er.library_id,
-                        er.item_key
-                    FROM literature_papers AS p
-                    LEFT JOIN literature_external_references AS er
-                        ON er.resource_type = 'paper' AND er.resource_id = p.id
-                    ORDER BY p.updated_at DESC, p.id
-                    LIMIT ? OFFSET ?
-                    """,
-                    (limit, offset),
-                ).fetchall()
-            else:
-                total = connection.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM literature_collection_papers
-                    WHERE collection_id = ?
-                    """,
-                    (collection_id,),
-                ).fetchone()[0]
-                rows = connection.execute(
-                    """
-                    SELECT
-                        p.id,
-                        p.title,
-                        p.authors_json,
-                        p.abstract,
-                        p.year,
-                        p.journal,
-                        p.doi,
-                        er.provider,
-                        er.library_id,
-                        er.item_key
-                    FROM literature_papers AS p
-                    INNER JOIN literature_collection_papers AS cp
-                        ON cp.paper_id = p.id AND cp.collection_id = ?
-                    LEFT JOIN literature_external_references AS er
-                        ON er.resource_type = 'paper' AND er.resource_id = p.id
-                    ORDER BY p.updated_at DESC, p.id
-                    LIMIT ? OFFSET ?
-                    """,
-                    (collection_id, limit, offset),
-                ).fetchall()
+            joins: list[str] = []
+            conditions: list[str] = []
+            parameters: list[object] = []
+            if collection_id is not None:
+                joins.append(
+                    "INNER JOIN literature_collection_papers AS cp ON cp.paper_id = p.id"
+                )
+                conditions.append("cp.collection_id = ?")
+                parameters.append(collection_id)
+            if query:
+                conditions.append(
+                    "(instr(lower(p.title), lower(?)) > 0 OR instr(lower(p.authors_json), lower(?)) > 0)"
+                )
+                parameters.extend((query, query))
+            if author:
+                conditions.append("instr(lower(p.authors_json), lower(?)) > 0")
+                parameters.append(author)
+            if year is not None:
+                conditions.append("p.year = ?")
+                parameters.append(year)
+            if journal:
+                conditions.append("p.journal = ? COLLATE NOCASE")
+                parameters.append(journal)
+            if tag:
+                conditions.append(
+                    "EXISTS (SELECT 1 FROM literature_tags AS filter_tag WHERE filter_tag.paper_id = p.id AND filter_tag.tag = ? COLLATE NOCASE)"
+                )
+                parameters.append(tag)
+
+            from_clause = "FROM literature_papers AS p " + " ".join(joins)
+            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+            total = connection.execute(
+                f"SELECT COUNT(DISTINCT p.id) {from_clause} {where_clause}",
+                parameters,
+            ).fetchone()[0]
+            rows = connection.execute(
+                f"""
+                SELECT DISTINCT
+                    p.id,
+                    p.title,
+                    p.authors_json,
+                    p.abstract,
+                    p.year,
+                    p.journal,
+                    p.doi,
+                    er.provider,
+                    er.library_id,
+                    er.item_key
+                {from_clause}
+                LEFT JOIN literature_external_references AS er
+                    ON er.resource_type = 'paper' AND er.resource_id = p.id
+                {where_clause}
+                ORDER BY p.updated_at DESC, p.id
+                LIMIT ? OFFSET ?
+                """,
+                (*parameters, limit, offset),
+            ).fetchall()
 
             papers = tuple(_paper_from_row(row, connection) for row in rows)
             library_version = _library_version(connection)
         return PaperPage(items=papers, total=total, library_version=library_version)
+
+    def get_paper(self, paper_id: str) -> PaperDetail | None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                """
+                SELECT
+                    p.id, p.title, p.authors_json, p.abstract, p.year, p.journal, p.doi,
+                    er.provider, er.library_id, er.item_key
+                FROM literature_papers AS p
+                LEFT JOIN literature_external_references AS er
+                    ON er.resource_type = 'paper' AND er.resource_id = p.id
+                WHERE p.id = ?
+                """,
+                (paper_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            paper = _paper_from_row(row, connection)
+            collection_rows = connection.execute(
+                """
+                SELECT c.id, c.name, c.parent_id, er.provider, er.library_id, er.item_key
+                FROM literature_collections AS c
+                INNER JOIN literature_collection_papers AS cp ON cp.collection_id = c.id
+                LEFT JOIN literature_external_references AS er
+                    ON er.resource_type = 'collection' AND er.resource_id = c.id
+                WHERE cp.paper_id = ?
+                ORDER BY c.name COLLATE NOCASE, c.id
+                """,
+                (paper_id,),
+            ).fetchall()
+        return PaperDetail(
+            paper=paper,
+            collections=tuple(_collection_from_row(row) for row in collection_rows),
+        )
+
+    def list_notes(self, paper_id: str) -> tuple[Note, ...]:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT n.id, n.paper_id, n.content, n.kind, n.page_label, n.color,
+                       er.provider, er.library_id, er.item_key
+                FROM literature_notes AS n
+                LEFT JOIN literature_external_references AS er
+                    ON er.resource_type = 'note' AND er.resource_id = n.id
+                WHERE n.paper_id = ?
+                ORDER BY n.kind, n.updated_at DESC, n.id
+                """,
+                (paper_id,),
+            ).fetchall()
+        return tuple(_note_from_row(row) for row in rows)
+
+    def list_attachments(self, paper_id: str) -> tuple[Attachment, ...]:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT a.id, a.paper_id, a.filename, a.content_type, a.downloadable, a.link_mode,
+                       er.provider, er.library_id, er.item_key
+                FROM literature_attachments AS a
+                LEFT JOIN literature_external_references AS er
+                    ON er.resource_type = 'attachment' AND er.resource_id = a.id
+                WHERE a.paper_id = ?
+                ORDER BY a.downloadable DESC, a.filename COLLATE NOCASE, a.id
+                """,
+                (paper_id,),
+            ).fetchall()
+        return tuple(_attachment_from_row(row) for row in rows)
+
+    def list_filter_options(self) -> FilterOptions:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            years = tuple(
+                int(row[0])
+                for row in connection.execute(
+                    "SELECT DISTINCT year FROM literature_papers WHERE year IS NOT NULL ORDER BY year DESC"
+                )
+            )
+            journals = tuple(
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT DISTINCT journal FROM literature_papers WHERE journal IS NOT NULL AND journal <> '' ORDER BY journal COLLATE NOCASE"
+                )
+            )
+            tags = tuple(
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT DISTINCT tag FROM literature_tags ORDER BY tag COLLATE NOCASE"
+                )
+            )
+        return FilterOptions(years=years, journals=journals, tags=tags)
 
     def apply_changes(
         self,
@@ -441,6 +603,14 @@ class SQLiteLiteratureRepository:
                             (collection_id, changed_paper.paper.id, collection_id),
                         )
 
+                for note in changes.notes:
+                    _upsert_note(connection, note, synced_at)
+                    _upsert_external_reference(connection, "note", note)
+
+                for attachment in changes.attachments:
+                    _upsert_attachment(connection, attachment, synced_at)
+                    _upsert_external_reference(connection, "attachment", attachment)
+
                 for collection_id in changes.deleted_collection_ids:
                     connection.execute(
                         "DELETE FROM literature_collections WHERE id = ?",
@@ -453,9 +623,38 @@ class SQLiteLiteratureRepository:
                 for paper_id in changes.deleted_paper_ids:
                     connection.execute("DELETE FROM literature_papers WHERE id = ?", (paper_id,))
                     connection.execute(
-                        "DELETE FROM literature_external_references WHERE resource_type = 'paper' AND resource_id = ?",
+                        "DELETE FROM literature_external_references WHERE resource_id = ?",
                         (paper_id,),
                     )
+                for item_id in changes.deleted_item_ids:
+                    connection.execute("DELETE FROM literature_notes WHERE id = ?", (item_id,))
+                    connection.execute("DELETE FROM literature_attachments WHERE id = ?", (item_id,))
+                    connection.execute("DELETE FROM literature_papers WHERE id = ?", (item_id,))
+                    connection.execute(
+                        "DELETE FROM literature_external_references WHERE resource_id = ?",
+                        (item_id,),
+                    )
+
+                connection.execute(
+                    """
+                    DELETE FROM literature_external_references
+                    WHERE resource_type = 'note'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM literature_notes
+                          WHERE literature_notes.id = literature_external_references.resource_id
+                      )
+                    """
+                )
+                connection.execute(
+                    """
+                    DELETE FROM literature_external_references
+                    WHERE resource_type = 'attachment'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM literature_attachments
+                          WHERE literature_attachments.id = literature_external_references.resource_id
+                      )
+                    """
+                )
 
                 connection.execute(
                     """
@@ -565,6 +764,41 @@ def _paper_from_row(row: sqlite3.Row, connection: sqlite3.Connection) -> Paper:
     )
 
 
+def _external_reference_from_values(values: tuple[object, object, object]) -> ExternalReference | None:
+    provider, library_id, item_key = values
+    if provider is None or library_id is None or item_key is None:
+        return None
+    return ExternalReference(
+        provider=str(provider),
+        library_id=str(library_id),
+        item_key=str(item_key),
+    )
+
+
+def _note_from_row(row: tuple[object, ...]) -> Note:
+    return Note(
+        id=str(row[0]),
+        paper_id=str(row[1]),
+        content=str(row[2]),
+        kind=str(row[3]),
+        page_label=str(row[4]) if row[4] is not None else None,
+        color=str(row[5]) if row[5] is not None else None,
+        external_ref=_external_reference_from_values(row[6:9]),
+    )
+
+
+def _attachment_from_row(row: tuple[object, ...]) -> Attachment:
+    return Attachment(
+        id=str(row[0]),
+        paper_id=str(row[1]),
+        filename=str(row[2]),
+        content_type=str(row[3]) if row[3] is not None else None,
+        downloadable=bool(row[4]),
+        link_mode=str(row[5]) if row[5] is not None else None,
+        external_ref=_external_reference_from_values(row[6:9]),
+    )
+
+
 def _upsert_paper(connection: sqlite3.Connection, paper: Paper, updated_at: str) -> None:
     connection.execute(
         """
@@ -593,15 +827,71 @@ def _upsert_paper(connection: sqlite3.Connection, paper: Paper, updated_at: str)
     )
 
 
+def _upsert_note(connection: sqlite3.Connection, note: Note, updated_at: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO literature_notes
+            (id, paper_id, content, kind, page_label, color, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            paper_id = excluded.paper_id,
+            content = excluded.content,
+            kind = excluded.kind,
+            page_label = excluded.page_label,
+            color = excluded.color,
+            updated_at = excluded.updated_at
+        """,
+        (
+            note.id,
+            note.paper_id,
+            note.content,
+            note.kind,
+            note.page_label,
+            note.color,
+            updated_at,
+        ),
+    )
+
+
+def _upsert_attachment(
+    connection: sqlite3.Connection,
+    attachment: Attachment,
+    updated_at: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO literature_attachments
+            (id, paper_id, filename, content_type, downloadable, link_mode, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            paper_id = excluded.paper_id,
+            filename = excluded.filename,
+            content_type = excluded.content_type,
+            downloadable = excluded.downloadable,
+            link_mode = excluded.link_mode,
+            updated_at = excluded.updated_at
+        """,
+        (
+            attachment.id,
+            attachment.paper_id,
+            attachment.filename,
+            attachment.content_type,
+            int(attachment.downloadable),
+            attachment.link_mode,
+            updated_at,
+        ),
+    )
+
+
 def _upsert_external_reference(
     connection: sqlite3.Connection,
     resource_type: str,
-    resource: Collection | Paper | ChangedPaper,
+    resource: Collection | Paper | Note | Attachment | ChangedPaper,
 ) -> None:
-    reference = resource.external_ref if isinstance(resource, (Collection, Paper)) else resource.paper.external_ref
+    reference = resource.paper.external_ref if isinstance(resource, ChangedPaper) else resource.external_ref
     if reference is None:
         return
-    resource_id = resource.id if isinstance(resource, (Collection, Paper)) else resource.paper.id
+    resource_id = resource.paper.id if isinstance(resource, ChangedPaper) else resource.id
     connection.execute(
         """
         INSERT INTO literature_external_references

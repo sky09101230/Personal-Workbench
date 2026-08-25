@@ -2,7 +2,19 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from app.modules.literature.application.ports import LiteratureCache, LiteratureProvider
-from app.modules.literature.domain.models import Collection, LibraryChanges, LibraryState, Paper, PaperPage
+from app.modules.literature.application.errors import LiteratureResourceNotFoundError, PdfUnavailableError
+from app.modules.literature.domain.models import (
+    Attachment,
+    Collection,
+    FilterOptions,
+    LibraryChanges,
+    LibraryState,
+    Note,
+    Paper,
+    PaperDetail,
+    PaperPage,
+    ProviderFile,
+)
 
 
 @dataclass(frozen=True)
@@ -13,6 +25,9 @@ class SyncResult:
     sync_mode: str
     deleted_collections: int = 0
     deleted_papers: int = 0
+    notes: int = 0
+    attachments: int = 0
+    deleted_items: int = 0
 
 
 @dataclass(frozen=True)
@@ -20,17 +35,19 @@ class LiteratureService:
     provider: LiteratureProvider
     cache: LiteratureCache | None = None
 
-    def status(self) -> dict[str, str | bool]:
+    def status(self) -> dict[str, object]:
         state = self._library_state()
         return {
             "module": "literature",
             "provider": self.provider.name,
             "provider_configured": self.provider.configured,
             "sync_state": state.sync_state if state else "not_started",
+            "library_version": state.library_version if state else None,
+            "last_synced_at": state.last_synced_at if state else None,
         }
 
     def list_collections(self) -> tuple[Collection, ...]:
-        if self.cache and self._library_state():
+        if self.cache:
             return self.cache.list_collections()
         return self.provider.list_collections()
 
@@ -40,14 +57,59 @@ class LiteratureService:
         collection_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        query: str | None = None,
+        author: str | None = None,
+        year: int | None = None,
+        journal: str | None = None,
+        tag: str | None = None,
     ) -> PaperPage:
-        if self.cache and self._library_state():
-            return self.cache.list_papers(collection_id=collection_id, limit=limit, offset=offset)
+        if self.cache:
+            return self.cache.list_papers(
+                collection_id=collection_id,
+                limit=limit,
+                offset=offset,
+                query=query,
+                author=author,
+                year=year,
+                journal=journal,
+                tag=tag,
+            )
         return self.provider.list_papers(
             collection_id=collection_id,
             limit=limit,
             offset=offset,
         )
+
+    def get_paper(self, paper_id: str) -> PaperDetail:
+        detail = self.cache.get_paper(paper_id) if self.cache else None
+        if detail is None:
+            raise LiteratureResourceNotFoundError("Paper was not found in the local cache")
+        return detail
+
+    def list_notes(self, paper_id: str) -> tuple[Note, ...]:
+        self.get_paper(paper_id)
+        return self.cache.list_notes(paper_id) if self.cache else ()
+
+    def list_attachments(self, paper_id: str) -> tuple[Attachment, ...]:
+        self.get_paper(paper_id)
+        return self.cache.list_attachments(paper_id) if self.cache else ()
+
+    def list_filter_options(self) -> FilterOptions:
+        return self.cache.list_filter_options() if self.cache else FilterOptions()
+
+    def open_pdf(self, paper_id: str, *, range_header: str | None = None) -> ProviderFile:
+        attachments = self.list_attachments(paper_id)
+        attachment = next(
+            (
+                item
+                for item in attachments
+                if item.downloadable and item.content_type == "application/pdf"
+            ),
+            None,
+        )
+        if attachment is None:
+            raise PdfUnavailableError("No accessible PDF attachment is available")
+        return self.provider.open_attachment(attachment, range_header=range_header)
 
     def sync(self, *, page_size: int = 100) -> SyncResult:
         state = self._library_state()
@@ -86,6 +148,9 @@ class LiteratureService:
                     papers_by_id[paper.id] = paper
                     collection_papers[collection.id].add(paper.id)
 
+            assets = self.provider.list_assets()
+            library_version = _latest_version(library_version, assets.library_version)
+
             library_id = self._library_id(collections, tuple(papers_by_id.values()))
             self.cache.replace_library(
                 provider=provider_name,
@@ -93,6 +158,8 @@ class LiteratureService:
                 collections=collections,
                 papers=tuple(papers_by_id.values()),
                 collection_papers=collection_papers,
+                notes=assets.notes,
+                attachments=assets.attachments,
                 library_version=library_version,
             )
             return SyncResult(
@@ -100,6 +167,8 @@ class LiteratureService:
                 papers=len(papers_by_id),
                 library_version=library_version,
                 sync_mode="full",
+                notes=len(assets.notes),
+                attachments=len(assets.attachments),
             )
         except Exception as error:
             self.cache.mark_sync_failed(
@@ -130,6 +199,9 @@ class LiteratureService:
                 sync_mode="incremental",
                 deleted_collections=len(changes.deleted_collection_ids),
                 deleted_papers=len(changes.deleted_paper_ids),
+                notes=len(changes.notes),
+                attachments=len(changes.attachments),
+                deleted_items=len(changes.deleted_item_ids),
             )
         except Exception as error:
             self.cache.mark_sync_failed(
@@ -149,7 +221,7 @@ class LiteratureService:
         offset = 0
         library_version: str | None = None
         while True:
-            page = self.list_papers(collection_id=collection_id, limit=page_size, offset=offset)
+            page = self.provider.list_papers(collection_id=collection_id, limit=page_size, offset=offset)
             items.extend(page.items)
             library_version = page.library_version or library_version
             offset += len(page.items)
@@ -174,3 +246,13 @@ class LiteratureService:
             if resource.external_ref is not None
         ]
         return references[0].library_id if references else ""
+
+
+def _latest_version(*versions: str | None) -> str | None:
+    candidates = [version for version in versions if version]
+    if not candidates:
+        return None
+    try:
+        return str(max(int(version) for version in candidates))
+    except ValueError:
+        return candidates[-1]

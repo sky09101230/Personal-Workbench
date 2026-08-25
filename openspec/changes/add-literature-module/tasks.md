@@ -13,19 +13,20 @@
 
 ## 3. Library 浏览与 Notes
 
-- [x] 3.0 将 Literature 前端接入现有 Collections/Papers API，实现真实文库加载、Collection 筛选、刷新和基础 Metadata 展示。搜索、Notes 与 PDF 操作仍待后续任务完成。
-- [ ] 3.1 添加缓存文献的搜索、基础筛选、详情、Notes 和 Attachments API 契约与端点测试。
-- [ ] 3.2 将 Literature 首页接入 Collections、分页文献列表、搜索、筛选和加载/空/错误状态。
-- [ ] 3.3 实现三栏布局中的文献选择、详情面板、Notes 展示和可用 PDF 操作。
+- [x] 3.0 将 Literature 前端接入现有 Collections/Papers API，实现真实文库加载、Collection 筛选、刷新和基础 Metadata 展示；后续能力见 3.1–4.3。
+- [x] 3.1 添加缓存文献的搜索、基础筛选、详情、Notes 和 Attachments API 契约与端点测试。
+- [x] 3.2 将 Literature 首页接入 Collections、分页文献列表、搜索、筛选和加载/空/错误状态。
+- [x] 3.3 实现三栏布局中的文献选择、详情面板、Notes 展示和可用 PDF 操作。
 
 ## 4. PDF 阅读
 
-- [ ] 4.1 实现 PDF attachment 发现、受保护的 PDF stream/download API，以及不可访问附件的明确状态。
-- [ ] 4.2 集成 PDF.js，创建独立 `/literature/papers/:id/reader` 页面和翻页、跳页、缩放、页面适配、下载控制。
-- [ ] 4.3 为 Reader 添加可开关的只读 Notes/annotation metadata 侧栏，不实现自定义批注编辑器。
+- [x] 4.1 实现 PDF attachment 发现、受保护的 PDF stream/download API，以及不可访问附件的明确状态。
+- [x] 4.2 集成 PDF.js，创建独立 `/literature/papers/:id/reader` 页面和翻页、跳页、缩放、页面适配、下载控制。
+- [x] 4.3 为 Reader 添加可开关的只读 Notes/annotation metadata 侧栏，不实现自定义批注编辑器。
 
 ## 5. 验证与文档
 
-- [ ] 5.1 补充 SQLite 同步、Notes、Attachment、PDF 和 API 错误边界的后端测试。
-- [ ] 5.2 运行后端测试、前端 production build，并在配置真实 Zotero 凭据后手动验证同步、浏览与 PDF 流程。
-- [ ] 5.3 更新 README，记录同步行为、PDF 可用性限制和用户侧的真实 Zotero 配置步骤。
+- [x] 5.1 补充 SQLite 同步、Notes、Attachment、PDF 和 API 错误边界的后端测试。
+- [x] 5.2 运行后端测试、前端 production build，并在配置真实 Zotero 凭据后手动验证同步、浏览与 PDF 流程。
+  - 后端测试与 production build 已通过；真实 full sync 验证为 14 collections、59 papers、66 notes、83 attachments，缓存搜索/筛选均命中，并成功读取可用 PDF。
+- [x] 5.3 更新 README，记录同步行为、PDF 可用性限制和用户侧的真实 Zotero 配置步骤。

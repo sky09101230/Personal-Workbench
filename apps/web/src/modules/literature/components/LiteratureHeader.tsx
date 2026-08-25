@@ -1,23 +1,39 @@
-import { Command, RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 
 type LiteratureHeaderProps = {
   connectionError: boolean;
   loading: boolean;
+  syncing: boolean;
   providerName: string | undefined;
   providerReady: boolean;
+  lastSyncedAt: string | null | undefined;
+  searchQuery: string;
+  syncMessage: string | null;
+  syncState: string | undefined;
+  statusLoading: boolean;
   totalPapers: number;
-  onRefresh: () => void;
+  onSearchChange: (query: string) => void;
+  onSync: () => void;
 };
 
 export function LiteratureHeader({
   connectionError,
   loading,
+  syncing,
   providerName,
   providerReady,
+  lastSyncedAt,
+  searchQuery,
+  syncMessage,
+  syncState,
+  statusLoading,
   totalPapers,
-  onRefresh,
+  onSearchChange,
+  onSync,
 }: LiteratureHeaderProps) {
-  const connectionLabel = connectionError
+  const connectionLabel = statusLoading
+    ? "Connecting to Workbench API"
+    : connectionError
     ? "Library unavailable"
     : providerReady
       ? `${providerName ?? "Zotero"} connected · ${totalPapers} papers`
@@ -33,26 +49,37 @@ export function LiteratureHeader({
             {connectionLabel}
           </span>
         </div>
-        <p>Your research library</p>
+        <p>
+          {lastSyncedAt ? `Last synced ${formatSyncTime(lastSyncedAt)}` : "Not synced yet"}
+          {syncMessage ? ` · ${syncMessage}` : syncState === "failed" ? " · Last sync failed; showing cached data" : ""}
+        </p>
       </div>
 
       <div className="header-actions">
         <label className="search-field">
           <Search size={16} aria-hidden="true" />
-          <input placeholder="Search papers..." aria-label="Search papers" disabled />
-          <kbd><Command size={11} aria-hidden="true" />K</kbd>
+          <input
+            placeholder="Search title or author..."
+            aria-label="Search title or author"
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+          />
         </label>
         <button
-          className="icon-button header-refresh"
+          className="action-button action-secondary sync-button"
           type="button"
-          title="Refresh library"
-          aria-label="Refresh library"
-          onClick={onRefresh}
-          disabled={!providerReady || loading}
+          onClick={onSync}
+          disabled={!providerReady || loading || syncing}
         >
-          <RefreshCw size={16} className={loading ? "spin" : ""} />
+          <RefreshCw size={15} className={syncing ? "spin" : ""} />
+          {syncing ? "Syncing" : "Sync Zotero"}
         </button>
       </div>
     </header>
   );
+}
+
+function formatSyncTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

@@ -6,6 +6,12 @@ from app.modules.literature.application.service import LiteratureService
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository
 from app.modules.literature.infrastructure.providers.zotero.provider import ZoteroWebProvider
 from app.modules.literature.presentation.router import router as literature_router
+from app.modules.news.application.service import NewsService
+from app.modules.news.infrastructure.cache.sqlite import SQLiteNewsRepository
+from app.modules.news.infrastructure.providers.demo.provider import DEFAULT_TOPICS
+from app.modules.news.infrastructure.providers.openalex.provider import OpenAlexPaperProvider
+from app.modules.news.infrastructure.summarizers.deepseek import DeepSeekPaperSummarizer
+from app.modules.news.presentation.router import router as news_router
 
 
 def create_app() -> FastAPI:
@@ -23,12 +29,20 @@ def create_app() -> FastAPI:
         ZoteroWebProvider(settings),
         SQLiteLiteratureRepository(settings.database_url),
     )
+    app.state.news_service = NewsService(
+        providers=(OpenAlexPaperProvider(settings),),
+        repository=SQLiteNewsRepository(settings.database_url),
+        topics=DEFAULT_TOPICS,
+        summarizer=DeepSeekPaperSummarizer(settings),
+        slot_limited_sources=("openalex",),
+    )
 
     @app.get("/api/health", tags=["core"])
     def health() -> dict[str, str]:
         return {"status": "ok", "service": "workbench-api"}
 
     app.include_router(literature_router, prefix="/api/literature", tags=["literature"])
+    app.include_router(news_router, prefix="/api/news", tags=["news"])
     return app
 
 
