@@ -12,7 +12,7 @@ class SchemaVersion:
     version: int
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS news_feed_items (
@@ -50,6 +50,12 @@ _SCHEMA_STATEMENTS = (
         read INTEGER NOT NULL DEFAULT 0,
         saved INTEGER NOT NULL DEFAULT 0,
         hidden INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS news_source_state (
+        source TEXT PRIMARY KEY,
+        last_successful_refresh_slot TEXT NOT NULL
     )
     """,
     "CREATE INDEX IF NOT EXISTS news_feed_items_type_idx ON news_feed_items(type)",
@@ -97,27 +103,65 @@ class SQLiteNewsRepository:
                 raise
         return SchemaVersion(version=_SCHEMA_VERSION)
 
+    def get_source_refresh_slot(self, source: str) -> str | None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                "SELECT last_successful_refresh_slot FROM news_source_state WHERE source = ?",
+                (source,),
+            ).fetchone()
+        return str(row[0]) if row is not None else None
+
+    def topics_match(self, topics: Iterable[Topic]) -> bool:
+        self.ensure_schema()
+        expected = sorted(
+            (
+                topic.id,
+                topic.name,
+                _json(topic.keywords),
+                _json(topic.negative_keywords),
+                _json(topic.enabled_sources),
+            )
+            for topic in topics
+        )
+        with sqlite3.connect(self._database_path) as connection:
+            persisted = connection.execute(
+                """
+                SELECT id, name, keywords_json, negative_keywords_json, enabled_sources_json
+                FROM news_topics
+                ORDER BY id
+                """
+            ).fetchall()
+        return persisted == expected
+
     def save_refresh(
         self,
         *,
         items: Iterable[FeedItem],
         topics: Iterable[Topic],
         item_topics: Mapping[str, Iterable[str]],
+        source_slots: Mapping[str, str] | None = None,
+        item_types: Iterable[FeedItemType] | None = None,
     ) -> int:
         self.ensure_schema()
         feed_items = tuple(items)
         topic_items = tuple(topics)
+        refreshed_types = None if item_types is None else tuple(dict.fromkeys(item_types))
 
         with sqlite3.connect(self._database_path) as connection:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("BEGIN IMMEDIATE")
             try:
-                connection.execute("DELETE FROM news_topics")
                 connection.executemany(
                     """
                     INSERT INTO news_topics
                         (id, name, keywords_json, negative_keywords_json, enabled_sources_json)
                     VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        name = excluded.name,
+                        keywords_json = excluded.keywords_json,
+                        negative_keywords_json = excluded.negative_keywords_json,
+                        enabled_sources_json = excluded.enabled_sources_json
                     """,
                     (
                         (
@@ -130,6 +174,15 @@ class SQLiteNewsRepository:
                         for topic in topic_items
                     ),
                 )
+                topic_ids = tuple(topic.id for topic in topic_items)
+                if topic_ids:
+                    placeholders = ", ".join("?" for _ in topic_ids)
+                    connection.execute(
+                        f"DELETE FROM news_topics WHERE id NOT IN ({placeholders})",
+                        topic_ids,
+                    )
+                else:
+                    connection.execute("DELETE FROM news_topics")
                 connection.executemany(
                     """
                     INSERT INTO news_feed_items
@@ -162,6 +215,32 @@ class SQLiteNewsRepository:
                         for item in feed_items
                     ),
                 )
+                item_ids = tuple(item.id for item in feed_items)
+                if refreshed_types is None:
+                    if item_ids:
+                        placeholders = ", ".join("?" for _ in item_ids)
+                        connection.execute(
+                            f"DELETE FROM news_feed_items WHERE id NOT IN ({placeholders})",
+                            item_ids,
+                        )
+                    else:
+                        connection.execute("DELETE FROM news_feed_items")
+                elif refreshed_types:
+                    type_values = tuple(item_type.value for item_type in refreshed_types)
+                    type_placeholders = ", ".join("?" for _ in type_values)
+                    if item_ids:
+                        item_placeholders = ", ".join("?" for _ in item_ids)
+                        connection.execute(
+                            f"DELETE FROM news_feed_items "
+                            f"WHERE type IN ({type_placeholders}) "
+                            f"AND id NOT IN ({item_placeholders})",
+                            (*type_values, *item_ids),
+                        )
+                    else:
+                        connection.execute(
+                            f"DELETE FROM news_feed_items WHERE type IN ({type_placeholders})",
+                            type_values,
+                        )
                 connection.executemany(
                     "DELETE FROM news_item_topics WHERE item_id = ?",
                     ((item.id,) for item in feed_items),
@@ -173,6 +252,15 @@ class SQLiteNewsRepository:
                         for item in feed_items
                         for topic_id in item_topics.get(item.id, ())
                     ),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO news_source_state (source, last_successful_refresh_slot)
+                    VALUES (?, ?)
+                    ON CONFLICT(source) DO UPDATE SET
+                        last_successful_refresh_slot = excluded.last_successful_refresh_slot
+                    """,
+                    tuple((source, slot) for source, slot in (source_slots or {}).items()),
                 )
                 connection.commit()
             except Exception:

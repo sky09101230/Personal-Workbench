@@ -34,6 +34,7 @@ def create_app() -> FastAPI:
         repository=SQLiteNewsRepository(settings.database_url),
         topics=DEFAULT_TOPICS,
         summarizer=DeepSeekPaperSummarizer(settings),
+        slot_limited_sources=("openalex",),
     )
 
     @app.get("/api/health", tags=["core"])

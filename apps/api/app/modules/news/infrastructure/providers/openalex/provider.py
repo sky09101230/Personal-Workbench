@@ -26,6 +26,7 @@ class OpenAlexPaperProvider:
     """Discover recent papers through the official OpenAlex Works API."""
 
     name = "openalex"
+    item_types = (FeedItemType.PAPER,)
 
     def __init__(
         self,

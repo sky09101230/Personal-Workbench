@@ -5,22 +5,19 @@ import { FeedCard } from "./components/FeedCard";
 import type { FeedItemType, FeedPage, RefreshResult, Topic, TopicList } from "./types";
 import "./news.css";
 
-type TypeFilter = FeedItemType | "";
-
 const pageSize = 20;
-const tabs: { label: string; value: TypeFilter }[] = [
-  { label: "All", value: "" },
-  { label: "Papers", value: "paper" },
-  { label: "GitHub", value: "github_repo" },
-  { label: "Skills", value: "github_skill" },
-  { label: "AI News", value: "ai_news" },
-  { label: "X", value: "x_post" },
+const tabs: { label: string; refreshLabel: string; value: FeedItemType }[] = [
+  { label: "Papers", refreshLabel: "Refresh papers", value: "paper" },
+  { label: "GitHub", refreshLabel: "Refresh GitHub", value: "github_repo" },
+  { label: "Skills", refreshLabel: "Refresh skills", value: "github_skill" },
+  { label: "AI News", refreshLabel: "Refresh AI news", value: "ai_news" },
+  { label: "X", refreshLabel: "Refresh X", value: "x_post" },
 ];
 
 export function NewsPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [feed, setFeed] = useState<FeedPage | null>(null);
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("");
+  const [typeFilter, setTypeFilter] = useState<FeedItemType>("paper");
   const [topicFilter, setTopicFilter] = useState("");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -30,7 +27,7 @@ export function NewsPage() {
   const loadFeed = useCallback(async () => {
     const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
     if (typeFilter) params.set("type", typeFilter);
-    if (topicFilter) params.set("topic", topicFilter);
+    if (typeFilter === "paper" && topicFilter) params.set("topic", topicFilter);
     setLoading(true);
     setError(false);
     try {
@@ -56,12 +53,13 @@ export function NewsPage() {
     () => Object.fromEntries(topics.map((topic) => [topic.id, topic.name])),
     [topics],
   );
+  const activeTab = tabs.find((tab) => tab.value === typeFilter) ?? tabs[0];
 
   const refresh = async () => {
     setRefreshing(true);
     setError(false);
     try {
-      await postNewsJson<RefreshResult>("/api/news/refresh");
+      await postNewsJson<RefreshResult>(`/api/news/refresh?type=${typeFilter}`);
       const result = await getNewsJson<TopicList>("/api/news/topics");
       setTopics(result.items);
       if (offset !== 0) setOffset(0);
@@ -73,7 +71,7 @@ export function NewsPage() {
     }
   };
 
-  const selectType = (value: TypeFilter) => {
+  const selectType = (value: FeedItemType) => {
     setTypeFilter(value);
     setOffset(0);
   };
@@ -90,10 +88,6 @@ export function NewsPage() {
           <h1>News</h1>
           <p>Discover, filter, and browse external research signals.</p>
         </div>
-        <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
-          <RefreshCw className={refreshing ? "spin" : ""} size={15} />
-          {refreshing ? "Refreshing" : "Refresh papers"}
-        </button>
       </header>
 
       <div className="news-controls">
@@ -111,13 +105,21 @@ export function NewsPage() {
             </button>
           ))}
         </div>
-        <label className="topic-filter">
-          <span>Topic</span>
-          <select value={topicFilter} onChange={(event) => selectTopic(event.target.value)}>
-            <option value="">All topics</option>
-            {topics.map((topic) => <option value={topic.id} key={topic.id}>{topic.name}</option>)}
-          </select>
-        </label>
+        <div className="news-control-actions">
+          {typeFilter === "paper" ? (
+            <label className="topic-filter">
+              <span>Topic</span>
+              <select value={topicFilter} onChange={(event) => selectTopic(event.target.value)}>
+                <option value="">All topics</option>
+                {topics.map((topic) => <option value={topic.id} key={topic.id}>{topic.name}</option>)}
+              </select>
+            </label>
+          ) : null}
+          <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
+            <RefreshCw className={refreshing ? "spin" : ""} size={15} />
+            {refreshing ? "Refreshing" : activeTab.refreshLabel}
+          </button>
+        </div>
       </div>
 
       <div className="news-feed-scroll">
@@ -126,7 +128,7 @@ export function NewsPage() {
         ) : error ? (
           <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached. Try again after restarting the changed services." />
         ) : !feed || feed.items.length === 0 ? (
-          <NewsState icon={<Newspaper size={22} />} title="No feed items" message="Refresh the paper feed or choose a different type or Topic." />
+          <NewsState icon={<Newspaper size={22} />} title="No feed items" message="Refresh this tab or choose a different Topic." />
         ) : (
           <div className="feed-list">
             {feed.items.map((item) => <FeedCard item={item} topicNames={topicNames} key={item.id} />)}

@@ -6,7 +6,7 @@ OpenAlex abstract 直接显示在 FeedCard 中过长，降低 Papers Feed 的扫
 
 - 新增 DeepSeek paper summarizer，通过官方 Chat Completions API 将 paper abstract 转换为 2–3 句简洁中文摘要。
 - 增加仅后端可见的 `DEEPSEEK_API_KEY`、base URL 与 model 配置；默认使用 `deepseek-v4-flash`，Key 不进入前端或 Feed metadata。
-- 在 Topic Match 完成后、SQLite 写入前替换 paper `FeedItem.summary`，保持匹配依据来自原始 OpenAlex 内容。
+- 在 Topic Match 完成后、SQLite 写入前替换所有已匹配且带原始摘要的 paper `FeedItem.summary`；零 Topic 候选不调用 DeepSeek，同时保持匹配依据来自原始 OpenAlex 内容。
 - DeepSeek 未配置、timeout、认证失败、限流、不可用或响应畸形时保留原摘要并继续 refresh。
 - 限制 FeedCard 摘要显示行数，避免历史 cache 或降级摘要继续撑高卡片。
 

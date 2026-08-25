@@ -45,9 +45,12 @@ def list_topics(
 
 
 @router.post("/refresh")
-def refresh(service: NewsService = Depends(get_news_service)) -> dict[str, object]:
+def refresh(
+    item_type: Annotated[FeedItemType | None, Query(alias="type")] = None,
+    service: NewsService = Depends(get_news_service),
+) -> dict[str, object]:
     try:
-        return {"status": "succeeded", **asdict(service.refresh())}
+        return {"status": "succeeded", **asdict(service.refresh(item_type=item_type))}
     except NewsError as error:
         raise HTTPException(
             status_code=502,

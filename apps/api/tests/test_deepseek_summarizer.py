@@ -42,28 +42,32 @@ def test_deepseek_maps_bounded_batch_request_and_summary() -> None:
     assert "test-deepseek-key" not in request.content.decode()
 
 
-def test_deepseek_limits_batch_and_applies_only_valid_partial_results() -> None:
+def test_deepseek_processes_all_items_in_bounded_batches_with_partial_results() -> None:
     items = tuple(_paper(f"openalex:W{index}", f"Abstract {index}") for index in range(12))
+    batch_ids: list[list[str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         source = json.loads(body["messages"][1]["content"].split("\n", 1)[1])
-        assert len(source["papers"]) == MAX_BATCH_ITEMS
+        ids = [paper["id"] for paper in source["papers"]]
+        batch_ids.append(ids)
         return _response(
             {
                 "summaries": [
-                    {"id": items[0].id, "summary": "第一篇摘要。"},
-                    {"id": "openalex:unknown", "summary": "未知摘要。"},
-                    {"id": items[1].id, "summary": ""},
+                    {"id": item_id, "summary": f"{item_id} 的摘要。"}
+                    for item_id in ids
+                    if item_id != items[1].id
                 ]
             }
         )
 
     summarized = _summarizer(handler).summarize(items)
 
-    assert summarized[0].summary == "第一篇摘要。"
+    assert [len(batch) for batch in batch_ids] == [MAX_BATCH_ITEMS, 2]
+    assert summarized[0].summary == "openalex:W0 的摘要。"
     assert summarized[1] == items[1]
-    assert summarized[-1] == items[-1]
+    assert summarized[-1].summary == "openalex:W11 的摘要。"
+    assert all(item.metadata.get("summary_kind") == "ai" for item in summarized[2:])
 
 
 def test_deepseek_without_key_makes_no_request() -> None:

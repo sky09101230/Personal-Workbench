@@ -6,9 +6,9 @@ News refresh 当前先由 Provider 生成标准化 `FeedItem`，再由 `NewsServ
 
 **Goals:**
 
-- 对通过现有 Topic Match 的 paper 生成 2–3 句简洁中文摘要。
+- 对最终命中至少一个 Topic 且带 source abstract 的 paper 生成 2–3 句简洁中文摘要。
 - 使用 DeepSeek 官方 `/chat/completions`，默认 `deepseek-v4-flash`、非 thinking 模式，并允许后端环境变量覆盖 model/base URL。
-- 用一次 bounded batch request 摘要本次 refresh 中的相关论文，限制每篇输入长度和输出长度。
+- 用每批最多 10 条的 bounded requests 摘要本次 refresh 中的论文，限制每篇输入长度和输出长度。
 - 在 DeepSeek 未配置或任何预期上游失败时保留原摘要并继续 SQLite refresh。
 - 标记成功的 AI summary，并让 FeedCard 对 AI 或 fallback summary 都保持紧凑。
 
@@ -23,13 +23,13 @@ News refresh 当前先由 Provider 生成标准化 `FeedItem`，再由 `NewsServ
 
 ### 1. 在 application service 的 Topic Match 后调用独立 summarizer port
 
-新增最小 `NewsSummarizerPort.summarize(items)`。`NewsService` 仍用 OpenAlex 原始标题/abstract 完成 Topic Match，只将至少命中一个 Topic、类型为 paper 且有 summary 的 items 交给 summarizer；返回结果按稳定 id 合并后再写 SQLite。这样 AI 文本不会改变 discovery/匹配结果，也避免对未关联噪声论文付费。
+新增最小 `NewsSummarizerPort.summarize(items)`。`NewsService` 仍用 OpenAlex 原始标题/abstract 完成 Topic Match，删除零 Topic 候选后，再将类型为 paper 且有 summary 的 items 交给 summarizer；返回结果按稳定 id 合并后再写 SQLite。这样 AI 文本不会改变 discovery/匹配结果，也不会为最终丢弃的候选消耗摘要调用。
 
 备选是让 `OpenAlexPaperProvider` 直接调用 DeepSeek。该方案会混合两个外部系统的错误边界，并在最终 Topic Match 前摘要所有候选，因此不采用。
 
-### 2. 单次 batch Chat Completions 请求
+### 2. Bounded batch Chat Completions 请求
 
-DeepSeek adapter 将本次相关 papers 组成一个 JSON 输入，每篇仅发送 id、title 与截断后的 abstract；system prompt 要求忽略 source text 中的指令，只基于给定内容生成简体中文、2–3 句、无 Markdown 的忠实摘要。请求使用 `response_format=json_object`、`thinking.type=disabled`、bounded `max_tokens`，响应按 id 校验后以 `dataclasses.replace` 更新 `FeedItem.summary`。
+DeepSeek adapter 将本次 papers 按每批最多 10 条组成 JSON 输入，每篇仅发送 id、title 与截断后的 abstract；system prompt 要求忽略 source text 中的指令，只基于给定内容生成简体中文、2–3 句、无 Markdown 的忠实摘要。请求使用 `response_format=json_object`、`thinking.type=disabled`、bounded `max_tokens`，响应按 id 校验后以 `dataclasses.replace` 更新 `FeedItem.summary`。单批失败只保留该批原摘要，不阻断其余批次或 News refresh。
 
 相比逐篇调用，batch 将每次 refresh 的网络往返压缩为一次，并保持当前每 Topic 小结果上限下的成本可控。部分响应缺失或无效时只保留对应 item 的原摘要。
 

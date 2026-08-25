@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 import httpx
 import pytest
@@ -10,6 +10,7 @@ from app.modules.news.application.errors import NewsSourceError
 from app.modules.news.application.service import NewsService
 from app.modules.news.domain.models import FeedItem, FeedItemType, Topic
 from app.modules.news.infrastructure.cache.sqlite import SQLiteNewsRepository
+from app.modules.news.infrastructure.providers.demo.provider import DEFAULT_TOPICS
 from app.modules.news.infrastructure.providers.openalex.provider import (
     RECENT_DAYS,
     RESULTS_PER_TOPIC,
@@ -98,6 +99,25 @@ def test_openalex_combines_topic_synonyms_with_boolean_or() -> None:
     assert requests[0].url.params["search"] == (
         '("diffractive neural network" OR "diffractive deep neural network" OR D2NN)'
     )
+
+
+def test_openalex_queries_each_default_topic_with_bounded_search() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, request=request, json={"results": []})
+
+    _provider(handler).fetch_items(topics=DEFAULT_TOPICS)
+
+    assert len(requests) == 3
+    assert [request.url.params["search"] for request in requests] == [
+        '("diffractive neural network" OR "diffractive deep neural network" OR '
+        '"diffractive deep network" OR "diffractive optical neural network" OR D2NN)',
+        "optical computing",
+        "metasurface",
+    ]
+    assert all(request.url.params["per_page"] == str(RESULTS_PER_TOPIC) for request in requests)
 
 
 def test_openalex_handles_missing_abstract_and_url_fallbacks_without_key() -> None:
@@ -209,6 +229,134 @@ def test_openalex_refresh_failure_preserves_existing_cache(tmp_path) -> None:
     assert page.items[0].title == "Cached optical paper"
 
 
+def test_openalex_same_shanghai_slot_uses_cached_feed_and_records_success(tmp_path) -> None:
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(200, request=request, json={"results": [_complete_work()]})
+
+    repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'same-slot.db').as_posix()}")
+    service = NewsService(
+        providers=(_provider(handler),),
+        repository=repository,
+        topics=TOPICS,
+        slot_limited_sources=("openalex",),
+        clock=lambda: datetime(2026, 8, 25, 1, 0, tzinfo=timezone.utc),
+    )
+
+    first = service.refresh()
+    second = service.refresh()
+
+    assert request_count == 1
+    assert first.fetched == 1
+    assert second.fetched == 0
+    assert second.stored == 1
+    assert repository.get_source_refresh_slot("openalex") == "2026-08-25-AM"
+    assert repository.list_feed().items[0].id == "openalex:W123"
+
+
+def test_openalex_same_slot_refreshes_when_topic_configuration_changes(tmp_path) -> None:
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(200, request=request, json={"results": [_complete_work()]})
+
+    repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'topic-change.db').as_posix()}")
+    now = lambda: datetime(2026, 8, 25, 1, 0, tzinfo=timezone.utc)
+    NewsService(
+        providers=(_provider(handler),),
+        repository=repository,
+        topics=TOPICS,
+        slot_limited_sources=("openalex",),
+        clock=now,
+    ).refresh()
+    changed_topics = (
+        *TOPICS,
+        Topic(
+            id="optical-computing",
+            name="Optical Computing",
+            keywords=("optical computing",),
+            enabled_sources=("openalex",),
+        ),
+    )
+
+    result = NewsService(
+        providers=(_provider(handler),),
+        repository=repository,
+        topics=changed_topics,
+        slot_limited_sources=("openalex",),
+        clock=now,
+    ).refresh()
+
+    assert request_count == 3
+    assert result.fetched == 1
+    assert repository.topics_match(changed_topics) is True
+
+
+def test_openalex_refreshes_from_am_to_pm_and_next_day(tmp_path) -> None:
+    request_count = 0
+    current = [datetime(2026, 8, 25, 3, 59, tzinfo=timezone.utc)]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        return httpx.Response(200, request=request, json={"results": [_complete_work()]})
+
+    repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'boundaries.db').as_posix()}")
+    service = NewsService(
+        providers=(_provider(handler),),
+        repository=repository,
+        topics=TOPICS,
+        slot_limited_sources=("openalex",),
+        clock=lambda: current[0],
+    )
+
+    service.refresh()
+    assert repository.get_source_refresh_slot("openalex") == "2026-08-25-AM"
+    current[0] = datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc)
+    service.refresh()
+    assert repository.get_source_refresh_slot("openalex") == "2026-08-25-PM"
+    current[0] = datetime(2026, 8, 25, 16, 0, tzinfo=timezone.utc)
+    service.refresh()
+
+    assert request_count == 3
+    assert repository.get_source_refresh_slot("openalex") == "2026-08-26-AM"
+
+
+def test_openalex_failure_does_not_consume_current_slot(tmp_path) -> None:
+    request_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        if request_count == 1:
+            return httpx.Response(429, request=request, json={"error": "rate limited"})
+        return httpx.Response(200, request=request, json={"results": [_complete_work()]})
+
+    repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'retry-slot.db').as_posix()}")
+    service = NewsService(
+        providers=(_provider(handler),),
+        repository=repository,
+        topics=TOPICS,
+        slot_limited_sources=("openalex",),
+        clock=lambda: datetime(2026, 8, 25, 5, 0, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(NewsSourceError):
+        service.refresh()
+    assert repository.get_source_refresh_slot("openalex") is None
+
+    result = service.refresh()
+
+    assert request_count == 2
+    assert result.fetched == 1
+    assert repository.get_source_refresh_slot("openalex") == "2026-08-25-PM"
+
+
 def test_papers_feed_api_returns_provider_normalized_openalex_schema(tmp_path) -> None:
     original_service = app.state.news_service
     provider = _provider(
@@ -220,7 +368,7 @@ def test_papers_feed_api_returns_provider_normalized_openalex_schema(tmp_path) -
         topics=TOPICS,
     )
     try:
-        refresh = client.post("/api/news/refresh")
+        refresh = client.post("/api/news/refresh?type=paper")
         feed = client.get("/api/news/feed?type=paper")
     finally:
         app.state.news_service = original_service
@@ -295,8 +443,16 @@ class _RecordingRepository:
         self.item_ids: tuple[str, ...] = ()
         self.item_topics: dict[str, tuple[str, ...]] = {}
 
-    def save_refresh(self, *, items, topics, item_topics) -> int:
-        del topics
+    def save_refresh(
+        self,
+        *,
+        items,
+        topics,
+        item_topics,
+        source_slots=None,
+        item_types=None,
+    ) -> int:
+        del topics, source_slots, item_types
         feed_items = tuple(items)
         self.item_ids = tuple(item.id for item in feed_items)
         self.item_topics = {key: tuple(value) for key, value in item_topics.items()}

@@ -1,15 +1,15 @@
 ## ADDED Requirements
 
-### Requirement: Relevant papers receive concise DeepSeek summaries
-The system SHALL use the configured backend DeepSeek Chat Completions API to replace the summary of Topic-matched paper FeedItems with a faithful, concise Simplified Chinese summary before SQLite persistence.
+### Requirement: Topic-matched papers with abstracts receive concise DeepSeek summaries
+The system SHALL use the configured backend DeepSeek Chat Completions API to replace the summary of every Topic-matched paper FeedItem with a source abstract with a faithful, concise Simplified Chinese summary before SQLite persistence.
 
-#### Scenario: Relevant paper has an abstract
-- **WHEN** a refreshed paper matches at least one News Topic, has a source summary, and DeepSeek is configured
-- **THEN** the system SHALL include its bounded id, title, and abstract in one batch summarization request and persist a 2–3 sentence Chinese summary for the same FeedItem id
+#### Scenario: Matched paper has an abstract
+- **WHEN** a refreshed paper matches at least one Topic, has a source summary, and DeepSeek is configured
+- **THEN** the system SHALL include its bounded id, title, and abstract in a bounded batch summarization request and persist a 2–3 sentence Chinese summary for the same FeedItem id
 
 #### Scenario: Candidate does not match a Topic
 - **WHEN** a fetched paper has no final Topic match
-- **THEN** the system SHALL NOT send that paper to DeepSeek and SHALL preserve the Provider-normalized item
+- **THEN** the system SHALL NOT send that paper to DeepSeek or persist it in the News Feed
 
 #### Scenario: Topic matching uses source content
 - **WHEN** a paper is summarized successfully

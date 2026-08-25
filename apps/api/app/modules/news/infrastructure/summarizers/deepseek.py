@@ -34,26 +34,28 @@ class DeepSeekPaperSummarizer:
         if not self._settings.deepseek_configured or not items:
             return items
 
-        candidates = tuple(item for item in items[:MAX_BATCH_ITEMS] if item.summary)
+        candidates = tuple(item for item in items if item.summary)
         if not candidates:
             return items
 
-        try:
-            response = self._client.post(
-                f"{self._base_url()}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self._settings.deepseek_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=self._request_body(candidates),
-            )
-        except httpx.HTTPError:
-            return items
+        summaries: dict[str, str] = {}
+        for start in range(0, len(candidates), MAX_BATCH_ITEMS):
+            batch = candidates[start : start + MAX_BATCH_ITEMS]
+            try:
+                response = self._client.post(
+                    f"{self._base_url()}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self._settings.deepseek_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=self._request_body(batch),
+                )
+            except httpx.HTTPError:
+                continue
+            if response.is_error:
+                continue
+            summaries.update(_response_summaries(response, {item.id for item in batch}))
 
-        if response.is_error:
-            return items
-
-        summaries = _response_summaries(response, {item.id for item in candidates})
         if not summaries:
             return items
         return tuple(_with_summary(item, summaries.get(item.id)) for item in items)

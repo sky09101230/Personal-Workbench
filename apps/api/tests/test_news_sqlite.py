@@ -14,8 +14,8 @@ def test_news_schema_is_idempotent_and_domain_isolated(tmp_path) -> None:
         connection.commit()
 
     repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
-    assert repository.ensure_schema().version == 1
-    assert repository.ensure_schema().version == 1
+    assert repository.ensure_schema().version == 2
+    assert repository.ensure_schema().version == 2
 
     with sqlite3.connect(database_path) as connection:
         tables = {
@@ -31,6 +31,7 @@ def test_news_schema_is_idempotent_and_domain_isolated(tmp_path) -> None:
         "news_feed_items",
         "news_topics",
         "news_item_topics",
+        "news_source_state",
         "news_user_state",
         "news_schema_migrations",
     }.issubset(tables)
@@ -79,6 +80,95 @@ def test_refresh_preserves_user_state_and_supports_feed_filters(tmp_path) -> Non
     assert page.items[0].hidden is False
     assert empty_page.items == ()
     assert empty_page.total == 0
+    assert repository.topics_match((topic,)) is True
+    assert repository.topics_match((Topic(id="other", name="Other"),)) is False
+
+
+def test_refresh_reconciles_old_news_data_without_touching_shared_tables(tmp_path) -> None:
+    database_path = tmp_path / "reconcile.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("CREATE TABLE literature_sentinel (id TEXT PRIMARY KEY)")
+        connection.execute("INSERT INTO literature_sentinel VALUES ('keep')")
+        connection.commit()
+
+    repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
+    old_topic = Topic(id="old-topic", name="Old Topic", keywords=("old",))
+    old_item = _item("demo:old", FeedItemType.PAPER, "Old paper")
+    repository.save_refresh(
+        items=(old_item,),
+        topics=(old_topic,),
+        item_topics={old_item.id: (old_topic.id,)},
+    )
+    target_topics = (
+        Topic(
+            id="diffractive-neural-networks",
+            name="Diffractive Neural Networks",
+            keywords=("D2NN",),
+            enabled_sources=("openalex",),
+        ),
+        Topic(
+            id="optical-computing",
+            name="Optical Computing",
+            keywords=("optical computing",),
+            enabled_sources=("openalex",),
+        ),
+        Topic(
+            id="metasurface",
+            name="Metasurface",
+            keywords=("metasurface",),
+            enabled_sources=("openalex",),
+        ),
+    )
+
+    repository.save_refresh(items=(), topics=target_topics, item_topics={})
+
+    with sqlite3.connect(database_path) as connection:
+        topics = connection.execute("SELECT id, name FROM news_topics ORDER BY id").fetchall()
+        feed_count = connection.execute("SELECT COUNT(*) FROM news_feed_items").fetchone()[0]
+        sentinel = connection.execute("SELECT id FROM literature_sentinel").fetchone()[0]
+
+    assert topics == [
+        ("diffractive-neural-networks", "Diffractive Neural Networks"),
+        ("metasurface", "Metasurface"),
+        ("optical-computing", "Optical Computing"),
+    ]
+    assert feed_count == 0
+    assert sentinel == "keep"
+
+
+def test_typed_refresh_reconciles_only_that_feed_type(tmp_path) -> None:
+    repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'typed.db').as_posix()}")
+    topic = Topic(id="optical", name="Optical", keywords=("optical",))
+    paper = _item("demo:paper", FeedItemType.PAPER, "Original paper")
+    repository_item = _item("demo:repo", FeedItemType.GITHUB_REPO, "Repository")
+    repository.save_refresh(
+        items=(paper, repository_item),
+        topics=(topic,),
+        item_topics={paper.id: (topic.id,), repository_item.id: (topic.id,)},
+    )
+    updated_paper = _item("demo:paper", FeedItemType.PAPER, "Updated paper")
+
+    repository.save_refresh(
+        items=(updated_paper,),
+        topics=(topic,),
+        item_topics={updated_paper.id: (topic.id,)},
+        item_types=(FeedItemType.PAPER,),
+    )
+
+    items = {item.id: item for item in repository.list_feed().items}
+    assert items["demo:paper"].title == "Updated paper"
+    assert items["demo:repo"].title == "Repository"
+    assert items["demo:repo"].topics == ("optical",)
+
+    repository.save_refresh(
+        items=(),
+        topics=(topic,),
+        item_topics={},
+        item_types=(FeedItemType.PAPER,),
+    )
+
+    remaining = repository.list_feed()
+    assert [item.id for item in remaining.items] == ["demo:repo"]
 
 
 def test_refresh_write_is_transactional(tmp_path) -> None:
@@ -92,9 +182,11 @@ def test_refresh_write_is_transactional(tmp_path) -> None:
             items=(_item("demo:paper", FeedItemType.PAPER, "Partial update"),),
             topics=(),
             item_topics={"demo:paper": ("unknown-topic",)},
+            source_slots={"openalex": "2026-08-25-AM"},
         )
 
     assert repository.list_feed().items[0].title == "Original"
+    assert repository.get_source_refresh_slot("openalex") is None
 
 
 def test_news_repository_rejects_non_sqlite_url() -> None:

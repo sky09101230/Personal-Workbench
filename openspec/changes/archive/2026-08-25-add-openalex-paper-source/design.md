@@ -50,9 +50,27 @@ Provider 对 `httpx.TimeoutException`、HTTP 429、401/403、其他非成功响�
 
 `Settings` 增加 `openalex_api_key`，从 `OPENALEX_API_KEY` 读取；空值不发送参数，非空时每个请求都发送。Key 不进入 Feed metadata、API 响应或前端。正式 composition 只注册 `OpenAlexPaperProvider`；Demo class 和 fixtures 保留供测试/显式开发使用。
 
-### 6. API/SQLite 不变，前端只解释 metadata
+### 6. Feed schema 不变，前端解释 metadata
 
-现有 `FeedItem.metadata_json` 足以持久化 OpenAlex 扩展信息，无 schema version 变化。`POST /api/news/refresh` 与 `GET /api/news/feed?type=paper` 保持原合约。`FeedCard` 仅在 item type 为 paper 时读取可选 metadata 并显示 venue、DOI 与 cited count，链接仍使用顶层 `url`。
+现有 `FeedItem.metadata_json` 足以持久化 OpenAlex 扩展信息。`GET /api/news/feed?type=paper` 保持原合约，`POST /api/news/refresh` 不带 `type` 时保留原有全量刷新行为，并允许用可选 `type` query 缩小刷新范围。`FeedCard` 仅在 item type 为 paper 时读取可选 metadata 并显示 venue、DOI 与 cited count，链接仍使用顶层 `url`。
+
+### 7. 用本地日期 AM/PM 槽位限制成功抓取
+
+production composition 将 OpenAlex 标记为半日槽位来源。`NewsService` 用 `Asia/Shanghai` 将当前时刻转换为 `YYYY-MM-DD-AM` 或 `YYYY-MM-DD-PM`：同一槽位已有成功记录且 SQLite 中的 Topic 查询配置与当前配置一致时，不调用任何上游 Provider，直接保留并使用现有 SQLite Feed；进入 PM、次日 AM 或 Topic 配置变化后可再次抓取。
+
+槽位不使用需要定时重置的 Bool。SQLite schema version 2 新增 News-only source state 表。只有 Provider fetch、Topic Match、可选摘要和 Feed 写入全部成功后，才在同一事务中写入当前槽位；任何上游或写入失败均不占用槽位。
+
+### 8. 成功 refresh 对账 News 快照
+
+`save_refresh` 在单一事务内将 Topics 替换为当前配置，并删除不在本次结果中的旧 `news_feed_items`。仍在结果中的条目继续 upsert，因此其 `news_user_state` 保留；被移除条目的 News user state 由外键级联清除。该操作只使用 `news_*` 表，不读取、删除或改写共享数据库中的 `literature_*` 表。
+
+### 9. Topic Match 是摘要与入库门槛
+
+OpenAlex `search` 结果只是 bounded candidates。`NewsService` 仍先用 Provider-normalized title、abstract 与 authors 计算所有 Topic 关联，然后删除没有任何关联的候选；只有至少命中一个 Topic 的 work id 去重并集进入 DeepSeek enrichment 和 `save_refresh`。因此不带 `topic` 参数的 All topics Feed 等于各 Topic Feed 的并集，而不是 OpenAlex 原始候选集。
+
+### 10. 类型 tab 约束刷新作用域
+
+News 页面不再提供跨类型 `All` tab，默认进入 Papers。每个 tab 的刷新按钮将其 `FeedItemType` 作为 `POST /api/news/refresh?type=...` 传入；`NewsSourcePort` 声明支持的 `item_types`，service 只调用匹配 Provider。SQLite 对账也以该类型为边界，只删除该类型中不再返回的条目，同时保留其他类型的 Feed、用户状态和 Topic 关联。没有匹配 Provider 的类型返回成功空操作，不删除已有缓存。Topic 筛选属于 paper discovery，只在 Papers tab 呈现并参与 Feed 请求；切换到其他 tab 时保留其选择但不发送 `topic` query。
 
 ## Risks / Trade-offs
 
@@ -61,12 +79,16 @@ Provider 对 `httpx.TimeoutException`、HTTP 429、401/403、其他非成功响�
 - [同一 work 被多个查询返回] → Provider 与 service 两层按 OpenAlex namespaced id 去重。
 - [OpenAlex 无 Key 公共访问策略变化] → 支持配置 Key，401/403 稳定失败且不污染 cache；部署可只修改环境变量后重启 API。
 - [部分 work 字段缺失或 shape 不一致] → required envelope/identity/title 失败视为 malformed response；可选 abstract/metadata 缺失则安全降级。
+- [同槽重复点击 Refresh] → service 在调用 Provider 前读取成功槽位并直接返回缓存结果；不依赖后台任务或定时重置。
+- [成功刷新误删非 News 数据] → 快照对账 SQL 严格限定为 `news_*` 表，并以共享数据库中的非 News 哨兵测试验证边界。
+- [OpenAlex search 召回明显大于本地匹配] → 将 search 结果视为候选集；零 Topic 匹配项既不调用 AI，也不持久化。
+- [局部刷新误删其他 tab 数据] → Provider 选择和 SQLite 删除都使用同一个 `FeedItemType` 作用域，并以跨类型缓存保留测试覆盖。
 
 ## Migration Plan
 
 1. 部署后端代码与可选 `OPENALEX_API_KEY` 环境配置。
-2. 手动重启 API；无需 SQLite migration 或前端 secret 配置。
-3. 手动调用 News refresh，再从 Papers tab 或 Feed API 验证真实 `source=openalex` 条目。
+2. 手动重启 API；News schema version 2 会创建 source slot 状态表，无需前端 secret 配置。
+3. 手动调用 News refresh，将现有 News cache 对账为 D2NN、Optical Computing 与 Metasurface 匹配并集，再从 Papers tab 或 Feed API 验证真实 `source=openalex` 条目。
 4. 回滚时恢复此前 composition；已有 OpenAlex feed rows 可留在相同 schema 中，不影响 Demo 或未来 provider。
 
 ## Open Questions

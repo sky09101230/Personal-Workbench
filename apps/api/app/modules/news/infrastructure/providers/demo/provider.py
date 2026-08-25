@@ -17,6 +17,18 @@ DEFAULT_TOPICS = (
         negative_keywords=("job posting", "smart grid", "electric vehicle"),
         enabled_sources=("demo", "openalex"),
     ),
+    Topic(
+        id="optical-computing",
+        name="Optical Computing",
+        keywords=("optical computing",),
+        enabled_sources=("openalex",),
+    ),
+    Topic(
+        id="metasurface",
+        name="Metasurface",
+        keywords=("metasurface",),
+        enabled_sources=("openalex",),
+    ),
 )
 
 DEMO_TOPICS = (
@@ -40,6 +52,7 @@ class DemoNewsProvider:
     """A deterministic local provider that exercises every Feed item type."""
 
     name = "demo"
+    item_types = tuple(FeedItemType)
 
     def fetch_items(self, *, topics: tuple[Topic, ...]) -> tuple[FeedItem, ...]:
         del topics
