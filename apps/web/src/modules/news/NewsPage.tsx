@@ -2,7 +2,14 @@ import { AlertCircle, LoaderCircle, Newspaper, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getNewsJson, postNewsJson } from "./api";
 import { FeedCard } from "./components/FeedCard";
-import type { FeedItemType, FeedPage, RefreshResult, Topic, TopicList } from "./types";
+import type {
+  FeedItemType,
+  FeedPage,
+  RefreshResult,
+  Topic,
+  TopicList,
+  TrendingPeriod,
+} from "./types";
 import "./news.css";
 
 const pageSize = 20;
@@ -13,12 +20,18 @@ const tabs: { label: string; refreshLabel: string; value: FeedItemType }[] = [
   { label: "AI News", refreshLabel: "Refresh AI news", value: "ai_news" },
   { label: "X", refreshLabel: "Refresh X", value: "x_post" },
 ];
+const trendingPeriods: { label: string; value: TrendingPeriod }[] = [
+  { label: "Daily", value: "daily" },
+  { label: "Weekly", value: "weekly" },
+  { label: "Monthly", value: "monthly" },
+];
 
 export function NewsPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [feed, setFeed] = useState<FeedPage | null>(null);
   const [typeFilter, setTypeFilter] = useState<FeedItemType>("paper");
   const [topicFilter, setTopicFilter] = useState("");
+  const [trendingPeriod, setTrendingPeriod] = useState<TrendingPeriod>("daily");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,6 +41,7 @@ export function NewsPage() {
     const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
     if (typeFilter) params.set("type", typeFilter);
     if (typeFilter === "paper" && topicFilter) params.set("topic", topicFilter);
+    if (typeFilter === "github_repo") params.set("period", trendingPeriod);
     setLoading(true);
     setError(false);
     try {
@@ -37,7 +51,7 @@ export function NewsPage() {
     } finally {
       setLoading(false);
     }
-  }, [offset, topicFilter, typeFilter]);
+  }, [offset, topicFilter, trendingPeriod, typeFilter]);
 
   useEffect(() => {
     void getNewsJson<TopicList>("/api/news/topics")
@@ -81,6 +95,11 @@ export function NewsPage() {
     setOffset(0);
   };
 
+  const selectTrendingPeriod = (value: TrendingPeriod) => {
+    setTrendingPeriod(value);
+    setOffset(0);
+  };
+
   return (
     <section className="news-page">
       <header className="news-header">
@@ -114,6 +133,20 @@ export function NewsPage() {
                 {topics.map((topic) => <option value={topic.id} key={topic.id}>{topic.name}</option>)}
               </select>
             </label>
+          ) : typeFilter === "github_repo" ? (
+            <div className="trending-period-switch" role="group" aria-label="GitHub Trending period">
+              {trendingPeriods.map((period) => (
+                <button
+                  className={trendingPeriod === period.value ? "active" : ""}
+                  type="button"
+                  aria-pressed={trendingPeriod === period.value}
+                  onClick={() => selectTrendingPeriod(period.value)}
+                  key={period.value}
+                >
+                  {period.label}
+                </button>
+              ))}
+            </div>
           ) : null}
           <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
             <RefreshCw className={refreshing ? "spin" : ""} size={15} />
@@ -128,7 +161,13 @@ export function NewsPage() {
         ) : error ? (
           <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached. Try again after restarting the changed services." />
         ) : !feed || feed.items.length === 0 ? (
-          <NewsState icon={<Newspaper size={22} />} title="No feed items" message="Refresh this tab or choose a different Topic." />
+          <NewsState
+            icon={<Newspaper size={22} />}
+            title="No feed items"
+            message={typeFilter === "paper"
+              ? "Refresh this tab or choose a different Topic."
+              : "Refresh this tab to load the latest available items."}
+          />
         ) : (
           <div className="feed-list">
             {feed.items.map((item) => <FeedCard item={item} topicNames={topicNames} key={item.id} />)}

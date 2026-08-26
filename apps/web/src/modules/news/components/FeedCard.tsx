@@ -9,6 +9,11 @@ const typePresentation: Record<FeedItemType, { label: string; icon: ComponentTyp
   ai_news: { label: "AI News", icon: Sparkles },
   x_post: { label: "X Post", icon: MessageCircle },
 };
+const trendingGainLabels: Record<string, string> = {
+  daily: "today",
+  weekly: "this week",
+  monthly: "this month",
+};
 
 export function FeedCard({
   item,
@@ -64,9 +69,19 @@ function typeDetail(item: FeedItem): string | null {
     return [venue, doi, citations].filter(Boolean).join(" | ") || null;
   }
   if (item.type === "github_repo") {
+    const rank = typeof item.metadata.rank === "number" ? `Rank #${item.metadata.rank}` : null;
     const language = typeof item.metadata.language === "string" ? item.metadata.language : null;
-    const stars = typeof item.metadata.stars === "number" ? `${item.metadata.stars} stars` : null;
-    return [language, stars].filter(Boolean).join(" · ") || null;
+    const stars = typeof item.metadata.stars === "number"
+      ? `${item.metadata.stars.toLocaleString()} stars`
+      : null;
+    const forks = typeof item.metadata.forks === "number"
+      ? `${item.metadata.forks.toLocaleString()} forks`
+      : null;
+    const period = typeof item.metadata.period === "string" ? item.metadata.period : "";
+    const starsPeriod = typeof item.metadata.stars_period === "number"
+      ? `${item.metadata.stars_period.toLocaleString()} ${trendingGainLabels[period] ?? "in period"}`
+      : null;
+    return [rank, language, stars, forks, starsPeriod].filter(Boolean).join(" · ") || null;
   }
   if (item.type === "github_skill" && typeof item.metadata.repository === "string") return item.metadata.repository;
   if (item.type === "ai_news" && typeof item.metadata.publisher === "string") return item.metadata.publisher;

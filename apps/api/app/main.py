@@ -9,8 +9,9 @@ from app.modules.literature.presentation.router import router as literature_rout
 from app.modules.news.application.service import NewsService
 from app.modules.news.infrastructure.cache.sqlite import SQLiteNewsRepository
 from app.modules.news.infrastructure.providers.demo.provider import DEFAULT_TOPICS
+from app.modules.news.infrastructure.providers.github.trending.provider import GitHubTrendingProvider
 from app.modules.news.infrastructure.providers.openalex.provider import OpenAlexPaperProvider
-from app.modules.news.infrastructure.summarizers.deepseek import DeepSeekPaperSummarizer
+from app.modules.news.infrastructure.summarizers.deepseek import DeepSeekNewsSummarizer
 from app.modules.news.presentation.router import router as news_router
 
 
@@ -30,10 +31,10 @@ def create_app() -> FastAPI:
         SQLiteLiteratureRepository(settings.database_url),
     )
     app.state.news_service = NewsService(
-        providers=(OpenAlexPaperProvider(settings),),
+        providers=(OpenAlexPaperProvider(settings), GitHubTrendingProvider()),
         repository=SQLiteNewsRepository(settings.database_url),
         topics=DEFAULT_TOPICS,
-        summarizer=DeepSeekPaperSummarizer(settings),
+        summarizer=DeepSeekNewsSummarizer(settings),
         slot_limited_sources=("openalex",),
     )
 

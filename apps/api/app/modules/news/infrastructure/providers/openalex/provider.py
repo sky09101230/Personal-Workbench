@@ -27,6 +27,7 @@ class OpenAlexPaperProvider:
 
     name = "openalex"
     item_types = (FeedItemType.PAPER,)
+    uses_topics = True
 
     def __init__(
         self,

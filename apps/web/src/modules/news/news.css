@@ -12,6 +12,10 @@
 .news-control-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; }
 .topic-filter { display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 11px; font-weight: 600; }
 .topic-filter select { min-width: 150px; height: 32px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text-secondary); padding: 0 8px; }
+.trending-period-switch { display: inline-flex; overflow: hidden; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); }
+.trending-period-switch button { min-height: 32px; border: 0; border-left: 1px solid var(--border); background: transparent; color: var(--text-tertiary); padding: 0 9px; font-size: 11px; font-weight: 600; }
+.trending-period-switch button:first-child { border-left: 0; }
+.trending-period-switch button.active { background: #edf5f3; color: var(--accent); }
 .news-feed-scroll { min-height: 0; overflow-y: auto; padding: 22px 28px 30px; }
 .feed-list { display: grid; gap: 12px; max-width: 920px; margin: 0 auto; }
 .feed-card { border: 1px solid var(--border); border-radius: 7px; background: var(--surface); padding: 17px 18px 15px; box-shadow: 0 1px 1px rgba(33, 46, 48, .025); }
@@ -28,7 +32,7 @@
 .feed-card-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 22px; margin-top: 14px; }
 .feed-topics { display: flex; flex-wrap: wrap; gap: 5px; }
 .feed-topics span { border: 1px solid #e0e8e6; border-radius: 4px; background: #f7faf9; color: #6c7c7d; padding: 3px 6px; font-size: 10px; }
-.feed-detail { color: var(--text-tertiary); font-size: 10px; white-space: nowrap; }
+.feed-detail { color: var(--text-tertiary); font-size: 10px; text-align: right; }
 .news-state { display: grid; align-content: center; justify-items: center; min-height: 300px; padding: 28px; text-align: center; }
 .news-state > span { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 13px; border: 1px solid #dce7e4; border-radius: 7px; background: #fafdfc; color: #6d9996; }
 .news-state h2 { margin: 0 0 7px; color: var(--text-primary); font-size: 15px; font-weight: 620; }

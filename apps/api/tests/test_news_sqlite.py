@@ -1,4 +1,5 @@
 import sqlite3
+from dataclasses import replace
 
 import pytest
 
@@ -171,6 +172,82 @@ def test_typed_refresh_reconciles_only_that_feed_type(tmp_path) -> None:
     assert [item.id for item in remaining.items] == ["demo:repo"]
 
 
+def test_ranked_github_refresh_and_paper_refresh_preserve_each_other(tmp_path) -> None:
+    repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'ranked.db').as_posix()}")
+    topic = Topic(id="optical", name="Optical", keywords=("optical",))
+    paper = replace(
+        _item("openalex:paper", FeedItemType.PAPER, "Optical paper"),
+        published_at="2026-08-26T00:00:00+00:00",
+    )
+    stale_repo = _ranked_repo(
+        "github_trending:daily:stale/repo",
+        "stale/repo",
+        rank=1,
+        period="daily",
+    )
+    repository.save_refresh(
+        items=(paper, stale_repo),
+        topics=(topic,),
+        item_topics={paper.id: (topic.id,), stale_repo.id: ()},
+    )
+
+    second = _ranked_repo(
+        "github_trending:daily:second/repo",
+        "second/repo",
+        rank=2,
+        period="daily",
+    )
+    first = _ranked_repo(
+        "github_trending:daily:first/repo",
+        "first/repo",
+        rank=1,
+        period="daily",
+    )
+    weekly = _ranked_repo(
+        "github_trending:weekly:first/repo",
+        "first/repo",
+        rank=1,
+        period="weekly",
+    )
+    repository.save_refresh(
+        items=(second, first, weekly),
+        topics=(topic,),
+        item_topics={second.id: (), first.id: (), weekly.id: ()},
+        item_types=(FeedItemType.GITHUB_REPO,),
+    )
+
+    assert repository.list_feed(item_type=FeedItemType.PAPER).items[0].id == paper.id
+    ranked = repository.list_feed(item_type=FeedItemType.GITHUB_REPO, period="daily")
+    assert [item.id for item in ranked.items] == [first.id, second.id]
+    assert [item.metadata["rank"] for item in ranked.items] == [1, 2]
+    assert repository.list_feed(
+        item_type=FeedItemType.GITHUB_REPO,
+        period="weekly",
+    ).items == (weekly,)
+    assert repository.list_feed(
+        item_type=FeedItemType.GITHUB_REPO,
+        period="monthly",
+    ).total == 0
+    assert repository.list_feed().items[0].id == paper.id
+
+    updated_paper = _item("openalex:paper", FeedItemType.PAPER, "Updated optical paper")
+    repository.save_refresh(
+        items=(updated_paper,),
+        topics=(topic,),
+        item_topics={updated_paper.id: (topic.id,)},
+        item_types=(FeedItemType.PAPER,),
+    )
+
+    assert repository.list_feed(item_type=FeedItemType.PAPER).items[0].title == "Updated optical paper"
+    assert [
+        item.id
+        for item in repository.list_feed(
+            item_type=FeedItemType.GITHUB_REPO,
+            period="daily",
+        ).items
+    ] == [first.id, second.id]
+
+
 def test_refresh_write_is_transactional(tmp_path) -> None:
     database_path = tmp_path / "transaction.db"
     repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
@@ -206,4 +283,17 @@ def _item(item_id: str, item_type: FeedItemType, title: str) -> FeedItem:
         published_at="2026-08-20T00:00:00+00:00",
         fetched_at="2026-08-21T00:00:00+00:00",
         metadata={"kind": "test"},
+    )
+
+
+def _ranked_repo(item_id: str, title: str, *, rank: int, period: str) -> FeedItem:
+    return FeedItem(
+        id=item_id,
+        type=FeedItemType.GITHUB_REPO,
+        source="github_trending",
+        title=title,
+        summary=None,
+        url=f"https://github.com/{title}",
+        fetched_at="2026-08-25T00:00:00+00:00",
+        metadata={"rank": rank, "period": period},
     )
