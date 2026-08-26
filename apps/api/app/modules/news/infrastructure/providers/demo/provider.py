@@ -53,6 +53,7 @@ class DemoNewsProvider:
 
     name = "demo"
     item_types = tuple(FeedItemType)
+    uses_topics = True
 
     def fetch_items(self, *, topics: tuple[Topic, ...]) -> tuple[FeedItem, ...]:
         del topics

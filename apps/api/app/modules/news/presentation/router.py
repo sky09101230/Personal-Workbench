@@ -1,5 +1,5 @@
 from dataclasses import asdict
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
@@ -19,6 +19,7 @@ def get_news_service(request: Request) -> NewsService:
 def list_feed(
     item_type: Annotated[FeedItemType | None, Query(alias="type")] = None,
     topic: str | None = None,
+    period: Literal["daily", "weekly", "monthly"] | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     service: NewsService = Depends(get_news_service),
@@ -26,6 +27,7 @@ def list_feed(
     page = service.list_feed(
         item_type=item_type,
         topic_id=topic,
+        period=period,
         limit=limit,
         offset=offset,
     )

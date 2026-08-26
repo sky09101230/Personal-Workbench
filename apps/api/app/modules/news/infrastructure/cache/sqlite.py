@@ -273,6 +273,7 @@ class SQLiteNewsRepository:
         *,
         item_type: FeedItemType | None = None,
         topic_id: str | None = None,
+        period: str | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> FeedPage:
@@ -282,7 +283,25 @@ class SQLiteNewsRepository:
             raise ValueError("offset must be non-negative")
         self.ensure_schema()
 
-        where, parameters = _feed_filter(item_type=item_type, topic_id=topic_id)
+        where, parameters = _feed_filter(
+            item_type=item_type,
+            topic_id=topic_id,
+            period=period,
+        )
+        rank_order = (
+            """
+                    CASE
+                        WHEN json_type(item.metadata_json, '$.rank') IN ('integer', 'real') THEN 0
+                        ELSE 1
+                    END,
+                    CASE
+                        WHEN json_type(item.metadata_json, '$.rank') IN ('integer', 'real')
+                        THEN json_extract(item.metadata_json, '$.rank')
+                    END,
+            """
+            if item_type is not None
+            else ""
+        )
         with sqlite3.connect(self._database_path) as connection:
             total = connection.execute(
                 f"SELECT COUNT(*) FROM news_feed_items AS item {where}",
@@ -297,7 +316,10 @@ class SQLiteNewsRepository:
                 FROM news_feed_items AS item
                 LEFT JOIN news_user_state AS state ON state.item_id = item.id
                 {where}
-                ORDER BY COALESCE(item.published_at, item.fetched_at) DESC, item.id
+                ORDER BY
+                    {rank_order}
+                    COALESCE(item.published_at, item.fetched_at) DESC,
+                    item.id
                 LIMIT ? OFFSET ?
                 """,
                 (*parameters, limit, offset),
@@ -316,6 +338,7 @@ def _feed_filter(
     *,
     item_type: FeedItemType | None,
     topic_id: str | None,
+    period: str | None,
 ) -> tuple[str, tuple[object, ...]]:
     clauses: list[str] = []
     parameters: list[object] = []
@@ -328,6 +351,9 @@ def _feed_filter(
             "WHERE match.item_id = item.id AND match.topic_id = ?)"
         )
         parameters.append(topic_id)
+    if period is not None:
+        clauses.append("json_extract(item.metadata_json, '$.period') = ?")
+        parameters.append(period)
     return (f"WHERE {' AND '.join(clauses)}" if clauses else "", tuple(parameters))
 
 

@@ -1,4 +1,5 @@
 export type FeedItemType = "paper" | "github_repo" | "github_skill" | "ai_news" | "x_post";
+export type TrendingPeriod = "daily" | "weekly" | "monthly";
 
 export type FeedItem = {
   id: string;

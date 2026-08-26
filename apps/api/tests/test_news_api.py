@@ -1,5 +1,9 @@
+import json
+
+import httpx
 from fastapi.testclient import TestClient
 
+from app.core.config import Settings
 from app.main import app
 from app.modules.news.application.service import NewsService
 from app.modules.news.domain.models import FeedItem, FeedItemType, Topic
@@ -9,6 +13,10 @@ from app.modules.news.infrastructure.providers.demo.provider import (
     DEMO_TOPICS,
     DemoNewsProvider,
 )
+from app.modules.news.infrastructure.providers.github.trending.provider import (
+    GitHubTrendingProvider,
+)
+from app.modules.news.infrastructure.summarizers.deepseek import DeepSeekNewsSummarizer
 
 
 client = TestClient(app)
@@ -76,6 +84,7 @@ def test_news_feed_query_validation() -> None:
     assert client.get("/api/news/feed?limit=101").status_code == 422
     assert client.get("/api/news/feed?offset=-1").status_code == 422
     assert client.post("/api/news/refresh?type=unsupported").status_code == 422
+    assert client.get("/api/news/feed?period=yearly").status_code == 422
 
 
 def test_news_refresh_accepts_item_type_scope(tmp_path) -> None:
@@ -129,6 +138,101 @@ def test_news_refresh_without_matching_provider_preserves_cached_type(tmp_path) 
     assert feed.json()["items"][0]["id"] == "github:cached"
 
 
+def test_github_trending_uses_existing_type_scoped_refresh_and_feed_api(tmp_path) -> None:
+    original_service = app.state.news_service
+    requests: list[httpx.Request] = []
+    summary_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            text="""
+                <article class="Box-row">
+                  <h2><a href="/octo/trending">octo/trending</a></h2>
+                  <p class="col-9">A trending repository.</p>
+                  <span itemprop="programmingLanguage">Python</span>
+                  <a href="/octo/trending/stargazers">1,200</a>
+                  <a href="/octo/trending/forks">34</a>
+                  <span class="float-sm-right">56 stars today</span>
+                </article>
+            """,
+            headers={"Content-Type": "text/html"},
+        )
+
+    provider = GitHubTrendingProvider(
+        client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    def summarize_handler(request: httpx.Request) -> httpx.Response:
+        summary_requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {
+                                    "summaries": [
+                                        {
+                                            "id": "github_trending:daily:octo/trending",
+                                            "summary": "该仓库提供趋势项目示例，并使用 Python 实现。",
+                                        }
+                                    ]
+                                },
+                                ensure_ascii=False,
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    summarizer = DeepSeekNewsSummarizer(
+        Settings(
+            database_url="sqlite:///./data/workbench.db",
+            cors_origins=["http://localhost:5173"],
+            zotero_user_id="",
+            zotero_api_key="",
+            deepseek_api_key="test-deepseek-key",
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(summarize_handler)),
+    )
+    app.state.news_service = NewsService(
+        providers=(provider,),
+        repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'github-api.db').as_posix()}"),
+        topics=DEFAULT_TOPICS,
+        summarizer=summarizer,
+    )
+    try:
+        refresh = client.post("/api/news/refresh?type=github_repo")
+        feed = client.get("/api/news/feed?type=github_repo&period=daily")
+        weekly_feed = client.get("/api/news/feed?type=github_repo&period=weekly")
+    finally:
+        app.state.news_service = original_service
+
+    assert [request.url.params["since"] for request in requests] == [
+        "daily",
+        "weekly",
+        "monthly",
+    ]
+    assert len(summary_requests) == 1
+    assert refresh.status_code == 200
+    assert refresh.json()["providers"] == ["github_trending"]
+    assert refresh.json()["stored"] == 3
+    assert feed.status_code == 200
+    assert feed.json()["total"] == 1
+    assert feed.json()["items"][0]["id"] == "github_trending:daily:octo/trending"
+    assert feed.json()["items"][0]["topics"] == []
+    assert feed.json()["items"][0]["metadata"]["rank"] == 1
+    assert feed.json()["items"][0]["metadata"]["period"] == "daily"
+    assert feed.json()["items"][0]["summary"] == "该仓库提供趋势项目示例，并使用 Python 实现。"
+    assert feed.json()["items"][0]["metadata"]["summary_kind"] == "ai"
+    assert weekly_feed.json()["total"] == 1
+    assert weekly_feed.json()["items"][0]["id"] == "github_trending:weekly:octo/trending"
+    assert weekly_feed.json()["items"][0]["summary"] == feed.json()["items"][0]["summary"]
+
+
 def test_news_refresh_returns_stable_source_error(tmp_path) -> None:
     original_service = app.state.news_service
     app.state.news_service = NewsService(
@@ -148,6 +252,7 @@ def test_news_refresh_returns_stable_source_error(tmp_path) -> None:
 class _FailingProvider:
     name = "broken"
     item_types = tuple(FeedItemType)
+    uses_topics = True
 
     def fetch_items(self, *, topics):
         del topics
