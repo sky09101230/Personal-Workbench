@@ -2,7 +2,9 @@
 
 ## Project Purpose & Structure
 
-Personal Workbench: a local, single-user research workbench with three strictly independent modules — Literature (Zotero-backed library reader), News (external feed discovery), and Todo (project/task action workbench). FastAPI backend in `apps/api`, React + TypeScript frontend in `apps/web`.
+Personal Workbench: a local, single-user research workbench with four strictly independent backend modules — Literature (Zotero-backed library reader), News (external feed discovery), Todo (project/task action workbench), and ProjectActivity (external real-work observation). FastAPI backend lives in `apps/api`, and the React + TypeScript frontend lives in `apps/web`.
+
+`apps/agent` is an independently deployed device client, not a backend feature module. It observes local device/workspace activity and reports through the ProjectActivity API; it must not import `apps/api` internals or access the Workbench SQLite database directly.
 
 Backend code lives in `apps/api/app`: keep shared configuration in `core/config.py`, and organize each feature under `modules/<feature>/` with `domain/` (dataclass models), `application/` (services, `Protocol` ports, stable error types), `infrastructure/` (SQLite cache, external providers, AI planners/summarizers), and `presentation/` (FastAPI router with Pydantic request/response contracts).
 
@@ -10,7 +12,7 @@ Composition rules:
 
 - `app/main.py` is the composition root. It instantiates every provider/repository/planner/service and stores services on `app.state.<module>_service`; presentation code resolves services from `app.state` and must not construct implementations itself.
 - Modules must not import each other's code. Provider-specific code belongs only in that module's `infrastructure/` (e.g. Zotero in `literature/infrastructure/providers/zotero/`; OpenAlex, GitHub trending, DeepSeek under `news/` and `todo/`).
-- All three modules share one SQLite database (`DATABASE_URL`, default `sqlite:///./data/workbench.db`), but each module owns only its own `literature_*` / `news_*` / `todo_*` tables, with its own `_SCHEMA_VERSION` migration handled inside that module's infrastructure layer. Never read another module's tables.
+- All four modules share one SQLite database (`DATABASE_URL`, default `sqlite:///./data/workbench.db`), but each module owns only its own `literature_*` / `news_*` / `todo_*` / `activity_*` tables, with its own `_SCHEMA_VERSION` migration handled inside that module's infrastructure layer. Never read another module's tables.
 - API paths are `/api/<module>/*`; ids returned by the API are opaque — do not assemble or parse them.
 
 Frontend source is in `apps/web/src`: page composition and path-based routing in `app/App.tsx` (plain `window.location.pathname` matching — no router library), shell and the module registry in `core/`, and feature UI in `modules/<feature>/` (a `<Feature>Page.tsx`, an `api.ts` fetch client, `types.ts` contracts, `components/`). A new module must be registered in `core/modules/registry.ts`. Global styles live in `src/styles.css`; modules ship their own scoped CSS file. Backend tests are in `apps/api/tests`.
