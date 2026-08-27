@@ -32,7 +32,7 @@ npm.cmd --prefix apps\web run build
 .\.venv\Scripts\python.exe -m pytest -q apps\api\tests --basetemp .venv\tmp\pytest -p no:cacheprovider
 ```
 
-The API serves on port 8000; Vite serves on port 5173 and proxies `/api`. Use the repository-local pytest temp directory to avoid Windows user-temp permission issues. A repo-root `start-workbench.cmd` launches both servers in Windows Terminal.
+The API serves on port 8000; Vite serves on port 5173 and proxies `/api`. Use the repository-local pytest temp directory to avoid Windows user-temp permission issues. If pytest fails to clean `.venv\tmp\pytest` with a Windows permission error (another process holds it), run against a fresh `--basetemp .venv\tmp\pytest-<name>` instead of deleting locked files. A repo-root `start-workbench.cmd` launches both servers in Windows Terminal.
 
 After changing code or configuration, do not restart the API or Vite server in the background. Tell the user which service needs a restart and let them restart it manually.
 
@@ -44,7 +44,7 @@ Keep the current layer boundaries: presentation depends on application services;
 
 ## Testing Guidelines
 
-Use pytest and name test files `test_*.py` and tests `test_*`. Add or update endpoint tests when changing API contracts. The established pattern: fixtures swap a module's service on `app.state` for one built with fake/in-memory collaborators (tmp_path SQLite, stub planners/providers, injected clock), then restore it — follow this instead of reaching for global mocks. Verify production frontend changes with `npm.cmd --prefix apps\web run build`. There is no frontend test runner yet; do not claim browser behavior is covered by pytest.
+Use pytest and name test files `test_*.py` and tests `test_*`. Add or update endpoint tests when changing API contracts. The established pattern: use the shared `override_service` fixture from `apps/api/tests/conftest.py` to swap a module's service on `app.state` for one built with fake/in-memory collaborators (tmp_path SQLite, stub planners/providers, injected clocks); it restores the original automatically after each test. Verify production frontend changes with `npm.cmd --prefix apps\web run build`. There is no frontend test runner yet; do not claim browser behavior is covered by pytest.
 
 ## Commits, Pull Requests, and Configuration
 

@@ -21,19 +21,18 @@ class ApiPlanner:
 
 
 @pytest.fixture
-def todo_client(tmp_path):
-    original = app.state.todo_service
+def todo_client(tmp_path, override_service):
     planner = ApiPlanner()
-    app.state.todo_service = TodoService(
-        SQLiteTodoRepository(f"sqlite:///{(tmp_path / 'api-todo.db').as_posix()}"),
-        planner=planner,
-        clock=lambda: datetime(2026, 8, 26, 1, 0, tzinfo=timezone.utc),
+    override_service(
+        "todo_service",
+        TodoService(
+            SQLiteTodoRepository(f"sqlite:///{(tmp_path / 'api-todo.db').as_posix()}"),
+            planner=planner,
+            clock=lambda: datetime(2026, 8, 26, 1, 0, tzinfo=timezone.utc),
+        ),
     )
-    try:
-        with TestClient(app) as client:
-            yield client, planner
-    finally:
-        app.state.todo_service = original
+    with TestClient(app) as client:
+        yield client, planner
 
 
 def test_todo_api_project_task_today_and_detail_workflow(todo_client) -> None:

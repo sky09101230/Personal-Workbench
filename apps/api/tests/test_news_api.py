@@ -48,21 +48,20 @@ def test_default_news_topics_cover_diffractive_optical_computing_and_metasurface
     assert DEFAULT_TOPICS[2].enabled_sources == ("openalex",)
 
 
-def test_news_refresh_and_filtered_feed_api(tmp_path) -> None:
-    original_service = app.state.news_service
-    app.state.news_service = NewsService(
-        providers=(DemoNewsProvider(),),
-        repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'api.db').as_posix()}"),
-        topics=DEMO_TOPICS,
+def test_news_refresh_and_filtered_feed_api(tmp_path, override_service) -> None:
+    override_service(
+        "news_service",
+        NewsService(
+            providers=(DemoNewsProvider(),),
+            repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'api.db').as_posix()}"),
+            topics=DEMO_TOPICS,
+        ),
     )
-    try:
-        empty_feed = client.get("/api/news/feed")
-        topics = client.get("/api/news/topics")
-        refresh = client.post("/api/news/refresh")
-        repository_feed = client.get("/api/news/feed?type=github_repo&topic=research-tools")
-        paged_feed = client.get("/api/news/feed?limit=2&offset=1")
-    finally:
-        app.state.news_service = original_service
+    empty_feed = client.get("/api/news/feed")
+    topics = client.get("/api/news/topics")
+    refresh = client.post("/api/news/refresh")
+    repository_feed = client.get("/api/news/feed?type=github_repo&topic=research-tools")
+    paged_feed = client.get("/api/news/feed?limit=2&offset=1")
 
     assert empty_feed.status_code == 200
     assert empty_feed.json()["total"] == 0
@@ -87,18 +86,17 @@ def test_news_feed_query_validation() -> None:
     assert client.get("/api/news/feed?period=yearly").status_code == 422
 
 
-def test_news_refresh_accepts_item_type_scope(tmp_path) -> None:
-    original_service = app.state.news_service
-    app.state.news_service = NewsService(
-        providers=(DemoNewsProvider(),),
-        repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'typed-refresh.db').as_posix()}"),
-        topics=DEMO_TOPICS,
+def test_news_refresh_accepts_item_type_scope(tmp_path, override_service) -> None:
+    override_service(
+        "news_service",
+        NewsService(
+            providers=(DemoNewsProvider(),),
+            repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'typed-refresh.db').as_posix()}"),
+            topics=DEMO_TOPICS,
+        ),
     )
-    try:
-        refresh = client.post("/api/news/refresh?type=paper")
-        feed = client.get("/api/news/feed")
-    finally:
-        app.state.news_service = original_service
+    refresh = client.post("/api/news/refresh?type=paper")
+    feed = client.get("/api/news/feed")
 
     assert refresh.status_code == 200
     assert refresh.json()["providers"] == ["demo"]
@@ -107,8 +105,9 @@ def test_news_refresh_accepts_item_type_scope(tmp_path) -> None:
     assert feed.json()["items"][0]["type"] == "paper"
 
 
-def test_news_refresh_without_matching_provider_preserves_cached_type(tmp_path) -> None:
-    original_service = app.state.news_service
+def test_news_refresh_without_matching_provider_preserves_cached_type(
+    tmp_path, override_service
+) -> None:
     repository = SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'no-provider.db').as_posix()}")
     topic = Topic(id="research", name="Research", keywords=("research",))
     cached = FeedItem(
@@ -124,12 +123,9 @@ def test_news_refresh_without_matching_provider_preserves_cached_type(tmp_path) 
         topics=(topic,),
         item_topics={cached.id: (topic.id,)},
     )
-    app.state.news_service = NewsService(providers=(), repository=repository, topics=(topic,))
-    try:
-        refresh = client.post("/api/news/refresh?type=github_repo")
-        feed = client.get("/api/news/feed?type=github_repo")
-    finally:
-        app.state.news_service = original_service
+    override_service("news_service", NewsService(providers=(), repository=repository, topics=(topic,)))
+    refresh = client.post("/api/news/refresh?type=github_repo")
+    feed = client.get("/api/news/feed?type=github_repo")
 
     assert refresh.status_code == 200
     assert refresh.json()["providers"] == []
@@ -138,8 +134,9 @@ def test_news_refresh_without_matching_provider_preserves_cached_type(tmp_path) 
     assert feed.json()["items"][0]["id"] == "github:cached"
 
 
-def test_github_trending_uses_existing_type_scoped_refresh_and_feed_api(tmp_path) -> None:
-    original_service = app.state.news_service
+def test_github_trending_uses_existing_type_scoped_refresh_and_feed_api(
+    tmp_path, override_service
+) -> None:
     requests: list[httpx.Request] = []
     summary_requests: list[httpx.Request] = []
 
@@ -198,18 +195,18 @@ def test_github_trending_uses_existing_type_scoped_refresh_and_feed_api(tmp_path
         ),
         client=httpx.Client(transport=httpx.MockTransport(summarize_handler)),
     )
-    app.state.news_service = NewsService(
-        providers=(provider,),
-        repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'github-api.db').as_posix()}"),
-        topics=DEFAULT_TOPICS,
-        summarizer=summarizer,
+    override_service(
+        "news_service",
+        NewsService(
+            providers=(provider,),
+            repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'github-api.db').as_posix()}"),
+            topics=DEFAULT_TOPICS,
+            summarizer=summarizer,
+        ),
     )
-    try:
-        refresh = client.post("/api/news/refresh?type=github_repo")
-        feed = client.get("/api/news/feed?type=github_repo&period=daily")
-        weekly_feed = client.get("/api/news/feed?type=github_repo&period=weekly")
-    finally:
-        app.state.news_service = original_service
+    refresh = client.post("/api/news/refresh?type=github_repo")
+    feed = client.get("/api/news/feed?type=github_repo&period=daily")
+    weekly_feed = client.get("/api/news/feed?type=github_repo&period=weekly")
 
     assert [request.url.params["since"] for request in requests] == [
         "daily",
@@ -233,16 +230,15 @@ def test_github_trending_uses_existing_type_scoped_refresh_and_feed_api(tmp_path
     assert weekly_feed.json()["items"][0]["summary"] == feed.json()["items"][0]["summary"]
 
 
-def test_news_refresh_returns_stable_source_error(tmp_path) -> None:
-    original_service = app.state.news_service
-    app.state.news_service = NewsService(
-        providers=(_FailingProvider(),),
-        repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'failure.db').as_posix()}"),
+def test_news_refresh_returns_stable_source_error(tmp_path, override_service) -> None:
+    override_service(
+        "news_service",
+        NewsService(
+            providers=(_FailingProvider(),),
+            repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'failure.db').as_posix()}"),
+        ),
     )
-    try:
-        response = client.post("/api/news/refresh")
-    finally:
-        app.state.news_service = original_service
+    response = client.post("/api/news/refresh")
 
     assert response.status_code == 502
     assert response.json()["detail"]["code"] == "news_source_unavailable"

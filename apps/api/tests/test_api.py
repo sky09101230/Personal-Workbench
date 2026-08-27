@@ -35,26 +35,18 @@ def test_literature_status_keeps_provider_behind_workbench_api() -> None:
     assert response.json()["provider"] == "zotero"
 
 
-def test_collections_require_zotero_configuration() -> None:
-    original_service = app.state.literature_service
-    app.state.literature_service = LiteratureService(_UnconfiguredProvider())
-    try:
-        response = client.get("/api/literature/collections")
-    finally:
-        app.state.literature_service = original_service
+def test_collections_require_zotero_configuration(override_service) -> None:
+    override_service("literature_service", LiteratureService(_UnconfiguredProvider()))
+    response = client.get("/api/literature/collections")
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "provider_not_configured"
 
 
-def test_papers_endpoint_exposes_workbench_models() -> None:
-    original_service = app.state.literature_service
+def test_papers_endpoint_exposes_workbench_models(override_service) -> None:
     provider = _StubProvider()
-    app.state.literature_service = LiteratureService(provider)
-    try:
-        response = client.get("/api/literature/papers?collection_id=zotero:123:COLL&limit=25&offset=5")
-    finally:
-        app.state.literature_service = original_service
+    override_service("literature_service", LiteratureService(provider))
+    response = client.get("/api/literature/papers?collection_id=zotero:123:COLL&limit=25&offset=5")
 
     assert response.status_code == 200
     assert response.json()["items"][0]["title"] == "Optical Computing"
@@ -62,18 +54,17 @@ def test_papers_endpoint_exposes_workbench_models() -> None:
     assert provider.list_papers_args == ("zotero:123:COLL", 25, 5)
 
 
-def test_sync_endpoint_runs_full_then_incremental_sync(tmp_path) -> None:
-    original_service = app.state.literature_service
+def test_sync_endpoint_runs_full_then_incremental_sync(tmp_path, override_service) -> None:
     provider = _StubProvider()
-    app.state.literature_service = LiteratureService(
-        provider,
-        SQLiteLiteratureRepository(f"sqlite:///{(tmp_path / 'sync.db').as_posix()}"),
+    override_service(
+        "literature_service",
+        LiteratureService(
+            provider,
+            SQLiteLiteratureRepository(f"sqlite:///{(tmp_path / 'sync.db').as_posix()}"),
+        ),
     )
-    try:
-        full_response = client.post("/api/literature/sync")
-        incremental_response = client.post("/api/literature/sync")
-    finally:
-        app.state.literature_service = original_service
+    full_response = client.post("/api/literature/sync")
+    incremental_response = client.post("/api/literature/sync")
 
     assert full_response.status_code == 200
     assert full_response.json()["sync_mode"] == "full"
@@ -83,31 +74,31 @@ def test_sync_endpoint_runs_full_then_incremental_sync(tmp_path) -> None:
     assert incremental_response.json()["library_version"] == "43"
 
 
-def test_cached_search_detail_notes_attachments_and_pdf_endpoints(tmp_path) -> None:
-    original_service = app.state.literature_service
-    service = LiteratureService(
-        _StubProvider(),
-        SQLiteLiteratureRepository(f"sqlite:///{(tmp_path / 'v01.db').as_posix()}"),
+def test_cached_search_detail_notes_attachments_and_pdf_endpoints(
+    tmp_path, override_service
+) -> None:
+    override_service(
+        "literature_service",
+        LiteratureService(
+            _StubProvider(),
+            SQLiteLiteratureRepository(f"sqlite:///{(tmp_path / 'v01.db').as_posix()}"),
+        ),
     )
-    app.state.literature_service = service
-    try:
-        assert client.post("/api/literature/sync").status_code == 200
-        papers = client.get("/api/literature/papers?query=optical&author=missing")
-        matching_papers = client.get("/api/literature/papers?query=optical")
-        filtered_papers = client.get(
-            "/api/literature/papers?year=2024&journal=Optics%20Letters&tag=diffraction"
-        )
-        filters = client.get("/api/literature/filters")
-        detail = client.get("/api/literature/papers/zotero:123:PAPER")
-        notes = client.get("/api/literature/papers/zotero:123:PAPER/notes")
-        attachments = client.get("/api/literature/papers/zotero:123:PAPER/attachments")
-        pdf = client.get(
-            "/api/literature/papers/zotero:123:PAPER/pdf",
-            headers={"Range": "bytes=0-3"},
-        )
-        download = client.get("/api/literature/papers/zotero:123:PAPER/pdf/download")
-    finally:
-        app.state.literature_service = original_service
+    assert client.post("/api/literature/sync").status_code == 200
+    papers = client.get("/api/literature/papers?query=optical&author=missing")
+    matching_papers = client.get("/api/literature/papers?query=optical")
+    filtered_papers = client.get(
+        "/api/literature/papers?year=2024&journal=Optics%20Letters&tag=diffraction"
+    )
+    filters = client.get("/api/literature/filters")
+    detail = client.get("/api/literature/papers/zotero:123:PAPER")
+    notes = client.get("/api/literature/papers/zotero:123:PAPER/notes")
+    attachments = client.get("/api/literature/papers/zotero:123:PAPER/attachments")
+    pdf = client.get(
+        "/api/literature/papers/zotero:123:PAPER/pdf",
+        headers={"Range": "bytes=0-3"},
+    )
+    download = client.get("/api/literature/papers/zotero:123:PAPER/pdf/download")
 
     assert papers.json()["total"] == 0
     assert matching_papers.json()["items"][0]["title"] == "Optical Computing"
@@ -127,25 +118,25 @@ def test_cached_search_detail_notes_attachments_and_pdf_endpoints(tmp_path) -> N
     assert download.headers["content-disposition"].startswith("attachment;")
 
 
-def test_linked_pdf_is_reported_without_attempting_a_download(tmp_path) -> None:
+def test_linked_pdf_is_reported_without_attempting_a_download(
+    tmp_path, override_service
+) -> None:
     database_path = tmp_path / "linked.db"
-    original_service = app.state.literature_service
-    service = LiteratureService(
-        _StubProvider(),
-        SQLiteLiteratureRepository(f"sqlite:///{database_path.as_posix()}"),
+    override_service(
+        "literature_service",
+        LiteratureService(
+            _StubProvider(),
+            SQLiteLiteratureRepository(f"sqlite:///{database_path.as_posix()}"),
+        ),
     )
-    app.state.literature_service = service
-    try:
-        assert client.post("/api/literature/sync").status_code == 200
-        with sqlite3.connect(database_path) as connection:
-            connection.execute(
-                "UPDATE literature_attachments SET downloadable = 0, link_mode = 'linked_file'"
-            )
-            connection.commit()
-        attachments = client.get("/api/literature/papers/zotero:123:PAPER/attachments")
-        pdf = client.get("/api/literature/papers/zotero:123:PAPER/pdf")
-    finally:
-        app.state.literature_service = original_service
+    assert client.post("/api/literature/sync").status_code == 200
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE literature_attachments SET downloadable = 0, link_mode = 'linked_file'"
+        )
+        connection.commit()
+    attachments = client.get("/api/literature/papers/zotero:123:PAPER/attachments")
+    pdf = client.get("/api/literature/papers/zotero:123:PAPER/pdf")
 
     assert attachments.json()["items"][0]["availability"] == "linked_file"
     assert pdf.status_code == 404
