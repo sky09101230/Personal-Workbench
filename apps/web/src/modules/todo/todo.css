@@ -21,7 +21,27 @@
 .todo-section-heading .todo-primary { min-height: 34px; border-radius: 5px; }
 .todo-muted { margin: 5px 0 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.55; }
 .todo-task-list { display: grid; gap: 9px; }
-.todo-task-card { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 8px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-subtle); padding: 11px 12px 10px; }
+.todo-task-card { border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-subtle); padding: 7px 12px; }
+.todo-task-row { display: flex; align-items: center; gap: 7px; min-height: 29px; cursor: pointer; }
+.todo-task-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.todo-row-title { flex: 1; min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 13px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.todo-task-card.finished .todo-row-title { text-decoration: line-through; opacity: .75; }
+.row-notes-icon { flex: 0 0 auto; color: var(--text-tertiary); }
+.todo-meta-chip { display: inline-flex; flex: 0 0 auto; align-items: center; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-tertiary); padding: 2px 7px; font-size: 9px; font-weight: 650; white-space: nowrap; }
+.todo-meta-chip.pri-high { border-color: #e5c6c0; background: #fdf5f4; color: #a24b43; }
+.todo-meta-chip.pri-medium { border-color: #eadfc4; background: #fcf8ee; color: #95702f; }
+.todo-meta-chip.pri-low { border-color: #cfdfe8; background: #f5f9fb; color: #5c7d92; }
+.todo-expand { display: grid; place-items: center; width: 22px; height: 25px; flex: 0 0 auto; border: 0; background: transparent; color: var(--text-tertiary); }
+.quick-today { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; border: 1px dashed #b7d3cf; border-radius: 4px; background: transparent; color: var(--accent); padding: 3px 7px; font-size: 10px; font-weight: 650; }
+.quick-today:hover { background: var(--accent-subtle); }
+.quick-today.busy { opacity: .55; }
+.todo-task-editor { display: grid; gap: 9px; margin-top: 9px; padding-top: 10px; border-top: 1px dashed var(--border-subtle); cursor: default; }
+.heading-side { display: flex; align-items: center; gap: 9px; }
+.todo-secondary { display: inline-flex; align-items: center; gap: 5px; min-height: 29px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); padding: 0 9px; font-size: 11px; font-weight: 650; }
+.todo-secondary:disabled { opacity: .55; }
+.todo-action-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; max-width: 1040px; margin: 0 auto 14px; border: 1px solid #eccfcb; border-radius: 6px; background: #fdf4f3; color: #8d453e; padding: 10px 13px; font-size: 12px; }
+.todo-action-error span { display: inline-flex; align-items: center; gap: 7px; }
+.todo-action-error button { border: 0; background: transparent; color: inherit; }
 .todo-task-card.finished { opacity: .74; }
 .todo-complete { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); color: var(--accent); }
 .todo-task-body { min-width: 0; }
@@ -90,7 +110,6 @@
 .completed-items-editor form { display: flex; gap: 6px; }
 .completed-items-editor input { min-width: 0; flex: 1; height: 29px; border: 1px solid var(--border); border-radius: 4px; padding: 0 7px; font-size: 11px; }
 .completed-items-editor form button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); padding: 0 8px; font-size: 10px; }
-.project-info-save { justify-self: start; min-height: 31px; border-radius: 4px; }
 .completed-source-note { margin: -6px 3px 0; color: var(--text-tertiary); font-size: 10px; }
 
 @media (max-width: 1050px) {
@@ -107,6 +126,7 @@
   .quick-capture { width: 100%; }
   .todo-header p { display: none; }
   .todo-task-fields { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
+  .todo-task-row { flex-wrap: wrap; }
   .projects-workspace { grid-template-columns: 180px minmax(0, 1fr); }
 }
 
