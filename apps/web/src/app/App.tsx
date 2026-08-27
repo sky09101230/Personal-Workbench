@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { AppShell } from "../core/shell/AppShell";
 import { LiteraturePage } from "../modules/literature/LiteraturePage";
-import { getJson } from "../modules/literature/api";
+import { getJson } from "../core/api";
 import type { LiteratureStatus } from "../modules/literature/types";
 import { NewsPage } from "../modules/news/NewsPage";
 import { TodoPage } from "../modules/todo/TodoPage";
