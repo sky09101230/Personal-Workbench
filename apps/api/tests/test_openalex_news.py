@@ -357,21 +357,22 @@ def test_openalex_failure_does_not_consume_current_slot(tmp_path) -> None:
     assert repository.get_source_refresh_slot("openalex") == "2026-08-25-PM"
 
 
-def test_papers_feed_api_returns_provider_normalized_openalex_schema(tmp_path) -> None:
-    original_service = app.state.news_service
+def test_papers_feed_api_returns_provider_normalized_openalex_schema(
+    tmp_path, override_service
+) -> None:
     provider = _provider(
         lambda request: httpx.Response(200, request=request, json={"results": [_complete_work()]})
     )
-    app.state.news_service = NewsService(
-        providers=(provider,),
-        repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'api.db').as_posix()}"),
-        topics=TOPICS,
+    override_service(
+        "news_service",
+        NewsService(
+            providers=(provider,),
+            repository=SQLiteNewsRepository(f"sqlite:///{(tmp_path / 'api.db').as_posix()}"),
+            topics=TOPICS,
+        ),
     )
-    try:
-        refresh = client.post("/api/news/refresh?type=paper")
-        feed = client.get("/api/news/feed?type=paper")
-    finally:
-        app.state.news_service = original_service
+    refresh = client.post("/api/news/refresh?type=paper")
+    feed = client.get("/api/news/feed?type=paper")
 
     assert refresh.status_code == 200
     assert refresh.json()["providers"] == ["openalex"]
