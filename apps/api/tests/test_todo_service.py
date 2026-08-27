@@ -18,11 +18,13 @@ def service(tmp_path) -> TodoService:
 
 
 def test_project_crud_status_order_and_delete_preserves_tasks(service: TodoService) -> None:
-    first = service.create_project(name="D2NN", order=2)
+    first = service.create_project(name="D2NN", description="Optical experiments", completed_items=("Baseline",), order=2)
     second = service.create_project(name="Workbench", order=1)
     task = service.create_task(title="Keep me", project_id=first.id, is_next_action=True)
 
     assert [project.id for project in service.list_projects()] == [second.id, first.id]
+    assert first.description == "Optical experiments"
+    assert first.completed_items == ("Baseline",)
     paused = service.update_project(first.id, {"status": "paused", "order": 0})
     assert paused.status is ProjectStatus.PAUSED
     assert [project.id for project in service.list_projects(status=ProjectStatus.ACTIVE)] == [second.id]
