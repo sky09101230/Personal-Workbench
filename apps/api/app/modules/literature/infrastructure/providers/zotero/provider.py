@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -29,6 +30,8 @@ from app.modules.literature.domain.models import (
 API_BASE_URL = "https://api.zotero.org"
 API_VERSION = "3"
 MAX_PAGE_SIZE = 100
+
+logger = logging.getLogger(__name__)
 
 
 class ZoteroWebProvider:
@@ -333,16 +336,23 @@ class ZoteroWebProvider:
                 headers=self._headers(),
             )
         except httpx.RequestError as error:
+            logger.warning("Zotero request failed: %s", error)
             raise ProviderUnavailableError("Zotero could not be reached") from error
 
         if response.status_code in {401, 403}:
+            logger.warning(
+                "Zotero rejected the configured credentials (HTTP %s)",
+                response.status_code,
+            )
             raise ProviderAuthenticationError("Zotero rejected the configured credentials")
         if response.is_error:
+            logger.warning("Zotero returned HTTP %s for %s", response.status_code, path)
             raise ProviderUnavailableError(f"Zotero returned HTTP {response.status_code}")
 
         try:
             payload = response.json()
         except ValueError as error:
+            logger.warning("Zotero returned invalid JSON for %s: %s", path, error)
             raise ProviderUnavailableError("Zotero returned invalid JSON") from error
         return payload, response
 
@@ -358,6 +368,7 @@ class ZoteroWebProvider:
             request = self._client.build_request("GET", url, headers=headers)
             return self._client.send(request, stream=True, follow_redirects=False)
         except httpx.RequestError as error:
+            logger.warning("Zotero attachment request failed: %s", error)
             raise ProviderUnavailableError("Zotero attachment could not be reached") from error
 
     def _get_item(self, item_key: str) -> Mapping[str, Any]:
