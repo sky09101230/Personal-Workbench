@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
@@ -12,6 +13,8 @@ from app.modules.news.domain.models import FeedItem, FeedItemType
 MAX_BATCH_ITEMS = 10
 MAX_SOURCE_TEXT_CHARS = 4_000
 MAX_SUMMARY_CHARS = 500
+
+logger = logging.getLogger(__name__)
 MAX_OUTPUT_TOKENS = 1_600
 
 _SYSTEM_PROMPT = """You create faithful summaries of News feed items.
@@ -53,9 +56,13 @@ class DeepSeekNewsSummarizer:
                     },
                     json=self._request_body(batch),
                 )
-            except httpx.HTTPError:
+            except httpx.HTTPError as error:
+                logger.warning("DeepSeek news summary request failed: %s", error)
                 continue
             if response.is_error:
+                logger.warning(
+                    "DeepSeek news summary returned HTTP %s", response.status_code
+                )
                 continue
             representative_summaries.update(
                 _response_summaries(response, {item.id for item in batch})

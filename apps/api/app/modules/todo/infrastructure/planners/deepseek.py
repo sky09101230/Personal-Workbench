@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date
 from typing import Any
 
@@ -26,6 +27,8 @@ Only reference supplied task ids. Suggest the supplied current_date for work cho
 Return one JSON object exactly shaped as:
 {"summary":"brief Simplified Chinese rationale including what is deferred","items":[{"task_id":"id","suggested_planned_date":"YYYY-MM-DD","suggested_priority":"high|medium|low|null","reason":"brief Simplified Chinese reason"}]}
 """
+
+logger = logging.getLogger(__name__)
 
 
 class DeepSeekTodoPlanner:
@@ -61,8 +64,12 @@ class DeepSeekTodoPlanner:
                 },
             )
         except httpx.HTTPError as error:
+            logger.warning("DeepSeek planner request failed: %s", error)
             raise TodoPlannerError("DeepSeek planner request failed") from error
         if response.is_error:
+            logger.warning(
+                "DeepSeek planner returned HTTP %s", response.status_code
+            )
             raise TodoPlannerError(f"DeepSeek planner returned HTTP {response.status_code}")
         try:
             payload = response.json()
@@ -70,6 +77,7 @@ class DeepSeekTodoPlanner:
             parsed = json.loads(_strip_json_fence(content))
             return _parse_result(parsed, context)
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
+            logger.warning("DeepSeek planner returned an invalid response: %s", error)
             raise TodoPlannerError("DeepSeek planner returned an invalid response") from error
 
 

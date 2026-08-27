@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ from app.modules.news.domain.models import FeedItem, FeedItemType, Topic
 TRENDING_URL = "https://github.com/trending"
 TRENDING_PERIODS = ("daily", "weekly", "monthly")
 _COUNT = re.compile(r"(\d[\d,]*)")
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubTrendingProvider:
@@ -53,14 +56,22 @@ class GitHubTrendingProvider:
                 },
             )
         except httpx.TimeoutException as error:
+            logger.warning("GitHub Trending %s request timed out: %s", period, error)
             raise NewsSourceError(f"GitHub Trending {period} request timed out") from error
         except httpx.HTTPError as error:
+            logger.warning("GitHub Trending is unavailable: %s", error)
             raise NewsSourceError("GitHub Trending is unavailable") from error
 
         if response.is_error:
+            logger.warning(
+                "GitHub Trending is unavailable (HTTP %s, period=%s)",
+                response.status_code,
+                period,
+            )
             raise NewsSourceError("GitHub Trending is unavailable")
         content_type = response.headers.get("content-type", "").partition(";")[0].strip().lower()
         if content_type != "text/html":
+            logger.warning("GitHub Trending returned unexpected content %s", content_type)
             raise NewsSourceError("GitHub Trending returned unexpected content")
 
         parser = _TrendingParser()
@@ -68,6 +79,7 @@ class GitHubTrendingProvider:
             parser.feed(response.text)
             parser.close()
         except (UnicodeError, ValueError) as error:
+            logger.warning("GitHub Trending returned malformed HTML: %s", error)
             raise NewsSourceError("GitHub Trending returned malformed HTML") from error
 
         repositories = tuple(
@@ -76,6 +88,7 @@ class GitHubTrendingProvider:
             if _is_complete(repository)
         )
         if not repositories:
+            logger.warning("GitHub Trending %s returned no valid repositories", period)
             raise NewsSourceError(f"GitHub Trending {period} returned no valid repositories")
         return repositories
 

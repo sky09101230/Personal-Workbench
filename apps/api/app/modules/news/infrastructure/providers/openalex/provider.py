@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Callable, Mapping
 from datetime import date, datetime, timedelta, timezone
@@ -20,6 +21,8 @@ _SELECT_FIELDS = (
     "publication_date,primary_location,topics,keywords,cited_by_count,"
     "open_access,type"
 )
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAlexPaperProvider:
@@ -70,20 +73,26 @@ class OpenAlexPaperProvider:
         try:
             response = self._client.get(f"{API_BASE_URL}/works", params=params)
         except httpx.TimeoutException as error:
+            logger.warning("OpenAlex request timed out: %s", error)
             raise NewsSourceError("OpenAlex request timed out") from error
         except httpx.HTTPError as error:
+            logger.warning("OpenAlex is unavailable: %s", error)
             raise NewsSourceError("OpenAlex is unavailable") from error
 
         if response.status_code in {401, 403}:
+            logger.warning("OpenAlex authentication failed (HTTP %s)", response.status_code)
             raise NewsSourceError("OpenAlex authentication failed")
         if response.status_code == 429:
+            logger.warning("OpenAlex rate limit exceeded")
             raise NewsSourceError("OpenAlex rate limit exceeded")
         if response.is_error:
+            logger.warning("OpenAlex is unavailable (HTTP %s)", response.status_code)
             raise NewsSourceError("OpenAlex is unavailable")
 
         try:
             payload = response.json()
         except ValueError as error:
+            logger.warning("OpenAlex returned a malformed response: %s", error)
             raise NewsSourceError("OpenAlex returned a malformed response") from error
         if not isinstance(payload, Mapping) or not isinstance(payload.get("results"), list):
             raise NewsSourceError("OpenAlex returned a malformed response")
