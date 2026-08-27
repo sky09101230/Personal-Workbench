@@ -24,12 +24,16 @@ router = APIRouter()
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    completed_items: list[str] = Field(default_factory=list, max_length=100)
     status: ProjectStatus = ProjectStatus.ACTIVE
     order: int = 0
 
 
 class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    completed_items: list[str] | None = Field(default=None, max_length=100)
     status: ProjectStatus | None = None
     order: int | None = None
 

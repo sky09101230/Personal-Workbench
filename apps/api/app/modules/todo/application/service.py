@@ -44,6 +44,8 @@ class TodoService:
         self,
         *,
         name: str,
+        description: str | None = None,
+        completed_items: tuple[str, ...] = (),
         status: ProjectStatus = ProjectStatus.ACTIVE,
         order: int = 0,
     ) -> Project:
@@ -51,6 +53,8 @@ class TodoService:
         project = Project(
             id=str(uuid4()),
             name=_required_text(name, "Project name"),
+            description=_optional_text(description),
+            completed_items=tuple(_required_text(item, "Completed item") for item in completed_items),
             status=status,
             order=order,
             created_at=now,
@@ -69,7 +73,7 @@ class TodoService:
 
     def update_project(self, project_id: str, changes: Mapping[str, object]) -> Project:
         project = self.get_project(project_id)
-        allowed = {"name", "status", "order"}
+        allowed = {"name", "description", "completed_items", "status", "order"}
         _reject_unknown(changes, allowed)
         updated = replace(
             project,
@@ -77,6 +81,11 @@ class TodoService:
                 _required_text(changes["name"], "Project name")
                 if "name" in changes
                 else project.name
+            ),
+            description=_optional_text(changes["description"]) if "description" in changes else project.description,
+            completed_items=(
+                tuple(_required_text(item, "Completed item") for item in changes["completed_items"])
+                if "completed_items" in changes else project.completed_items
             ),
             status=(
                 _enum_value(ProjectStatus, changes["status"], "Project status")
@@ -108,6 +117,7 @@ class TodoService:
             next_action=next_action,
             unfinished_tasks=unfinished,
             completed_tasks=completed,
+            completed_items=project.completed_items,
         )
 
     def create_task(

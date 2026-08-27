@@ -203,6 +203,8 @@ def _planner_context() -> PlannerContext:
     project = Project(
         id="project-1",
         name="Workbench",
+        description=None,
+        completed_items=(),
         status=ProjectStatus.ACTIVE,
         order=0,
         created_at=FIXED_NOW,

@@ -35,6 +35,8 @@ UNFINISHED_TASK_STATUSES = (TaskStatus.TODO, TaskStatus.DOING)
 class Project:
     id: str
     name: str
+    description: str | None
+    completed_items: tuple[str, ...]
     status: ProjectStatus
     order: int
     created_at: datetime
@@ -70,6 +72,7 @@ class ProjectDetail:
     next_action: Task | None
     unfinished_tasks: tuple[Task, ...]
     completed_tasks: tuple[Task, ...]
+    completed_items: tuple[str, ...]
 
 
 @dataclass(frozen=True)

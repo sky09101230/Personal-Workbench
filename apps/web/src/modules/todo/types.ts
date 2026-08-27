@@ -6,6 +6,8 @@ export type ProposalStatus = "pending" | "accepted" | "rejected";
 export type Project = {
   id: string;
   name: string;
+  description: string | null;
+  completed_items: string[];
   status: ProjectStatus;
   order: number;
   created_at: string;
@@ -45,6 +47,7 @@ export type ProjectDetail = {
   next_action: TodoTask | null;
   unfinished_tasks: TodoTask[];
   completed_tasks: TodoTask[];
+  completed_items: string[];
 };
 
 export type PlanProposalItem = {

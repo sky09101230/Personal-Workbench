@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from contextlib import contextmanager
 from collections.abc import Iterator
 from datetime import date, datetime
@@ -21,7 +22,7 @@ from app.modules.todo.domain.models import (
 )
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 _SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS todo_projects (
@@ -30,7 +31,9 @@ _SCHEMA_STATEMENTS = (
         status TEXT NOT NULL CHECK (status IN ('active', 'paused', 'archived')),
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        description TEXT,
+        completed_items_json TEXT NOT NULL DEFAULT '[]'
     )
     """,
     """
@@ -72,6 +75,8 @@ _SCHEMA_STATEMENTS = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS todo_projects_status_order_idx ON todo_projects(status, sort_order)",
+    "ALTER TABLE todo_projects ADD COLUMN description TEXT",
+    "ALTER TABLE todo_projects ADD COLUMN completed_items_json TEXT NOT NULL DEFAULT '[]'",
     "CREATE INDEX IF NOT EXISTS todo_tasks_project_status_idx ON todo_tasks(project_id, status)",
     "CREATE INDEX IF NOT EXISTS todo_tasks_planned_idx ON todo_tasks(planned_date, status)",
     "CREATE INDEX IF NOT EXISTS todo_tasks_due_idx ON todo_tasks(due_date, status)",
@@ -108,7 +113,11 @@ class SQLiteTodoRepository:
                 ).fetchone()
                 if applied is None:
                     for statement in _SCHEMA_STATEMENTS:
-                        connection.execute(statement)
+                        try:
+                            connection.execute(statement)
+                        except sqlite3.OperationalError as error:
+                            if "duplicate column name" not in str(error):
+                                raise
                     connection.execute(
                         "INSERT INTO todo_schema_migrations (version) VALUES (?)",
                         (_SCHEMA_VERSION,),
@@ -124,8 +133,8 @@ class SQLiteTodoRepository:
         with self._connection() as connection:
             connection.execute(
                 """
-                INSERT INTO todo_projects (id, name, status, sort_order, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO todo_projects (id, name, status, sort_order, created_at, updated_at, description, completed_items_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project.id,
@@ -134,6 +143,8 @@ class SQLiteTodoRepository:
                     project.order,
                     _datetime_text(project.created_at),
                     _datetime_text(project.updated_at),
+                    project.description,
+                    json.dumps(project.completed_items, ensure_ascii=False),
                 ),
             )
         return project
@@ -142,7 +153,7 @@ class SQLiteTodoRepository:
         self.ensure_schema()
         with self._connection() as connection:
             row = connection.execute(
-                "SELECT id, name, status, sort_order, created_at, updated_at "
+                "SELECT id, name, status, sort_order, created_at, updated_at, description, completed_items_json "
                 "FROM todo_projects WHERE id = ?",
                 (project_id,),
             ).fetchone()
@@ -153,12 +164,12 @@ class SQLiteTodoRepository:
         with self._connection() as connection:
             if status is None:
                 rows = connection.execute(
-                    "SELECT id, name, status, sort_order, created_at, updated_at "
+                    "SELECT id, name, status, sort_order, created_at, updated_at, description, completed_items_json "
                     "FROM todo_projects ORDER BY sort_order, created_at, id"
                 ).fetchall()
             else:
                 rows = connection.execute(
-                    "SELECT id, name, status, sort_order, created_at, updated_at "
+                    "SELECT id, name, status, sort_order, created_at, updated_at, description, completed_items_json "
                     "FROM todo_projects WHERE status = ? ORDER BY sort_order, created_at, id",
                     (status.value,),
                 ).fetchall()
@@ -170,7 +181,7 @@ class SQLiteTodoRepository:
             cursor = connection.execute(
                 """
                 UPDATE todo_projects
-                SET name = ?, status = ?, sort_order = ?, updated_at = ?
+                SET name = ?, status = ?, sort_order = ?, updated_at = ?, description = ?, completed_items_json = ?
                 WHERE id = ?
                 """,
                 (
@@ -178,6 +189,8 @@ class SQLiteTodoRepository:
                     project.status.value,
                     project.order,
                     _datetime_text(project.updated_at),
+                    project.description,
+                    json.dumps(project.completed_items, ensure_ascii=False),
                     project.id,
                 ),
             )
@@ -596,6 +609,8 @@ def _project_from_row(row: sqlite3.Row | tuple[object, ...]) -> Project:
         order=int(row[3]),
         created_at=datetime.fromisoformat(str(row[4])),
         updated_at=datetime.fromisoformat(str(row[5])),
+        description=str(row[6]) if row[6] is not None else None,
+        completed_items=tuple(json.loads(str(row[7]))),
     )
 
 

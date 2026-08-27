@@ -81,6 +81,16 @@
 .project-add-task { display: flex; height: 34px; margin-top: 15px; }
 .project-add-task input { min-width: 0; flex: 1; border: 1px solid var(--border); border-radius: 5px 0 0 5px; padding: 0 9px; font-size: 11px; }
 .project-add-task .todo-primary { border-radius: 0 5px 5px 0; }
+.project-info-editor { display: grid; gap: 12px; margin-top: 15px; padding: 14px; border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-subtle); }
+.project-info-editor label, .completed-items-editor { display: grid; gap: 5px; color: var(--text-tertiary); font-size: 10px; font-weight: 650; text-transform: uppercase; }
+.project-info-editor textarea { min-height: 64px; resize: vertical; border: 1px solid var(--border); border-radius: 4px; padding: 7px; color: var(--text-secondary); font-size: 12px; text-transform: none; }
+.completed-items-editor > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border-subtle); border-radius: 4px; background: var(--surface); padding: 7px; color: var(--text-secondary); font-size: 11px; font-weight: 400; text-transform: none; }
+.completed-items-editor > div button { border: 0; background: transparent; color: var(--warning); }
+.completed-items-editor form { display: flex; gap: 6px; }
+.completed-items-editor input { min-width: 0; flex: 1; height: 29px; border: 1px solid var(--border); border-radius: 4px; padding: 0 7px; font-size: 11px; }
+.completed-items-editor form button { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text-secondary); padding: 0 8px; font-size: 10px; }
+.project-info-save { justify-self: start; min-height: 31px; border-radius: 4px; }
+.completed-source-note { margin: -6px 3px 0; color: var(--text-tertiary); font-size: 10px; }
 
 @media (max-width: 1050px) {
   .todo-header { gap: 18px; padding-right: 20px; padding-left: 20px; }

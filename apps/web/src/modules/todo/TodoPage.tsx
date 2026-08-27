@@ -46,6 +46,9 @@ export function TodoPage() {
   const [captureProjectId, setCaptureProjectId] = useState("");
   const [newProjectName, setNewProjectName] = useState("");
   const [projectTaskTitle, setProjectTaskTitle] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [completedItems, setCompletedItems] = useState<string[]>([]);
+  const [completedDraft, setCompletedDraft] = useState("");
   const [proposal, setProposal] = useState<PlanProposal | null>(null);
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
@@ -68,7 +71,10 @@ export function TodoPage() {
     }
     if (activeView === "projects") {
       if (selectedProjectId) {
-        setProjectDetail(await getTodoJson<ProjectDetail>(`/api/todo/projects/${selectedProjectId}/detail`));
+        const loaded = await getTodoJson<ProjectDetail>(`/api/todo/projects/${selectedProjectId}/detail`);
+        setProjectDetail(loaded);
+        setProjectDescription(loaded.project.description ?? "");
+        setCompletedItems(loaded.project.completed_items);
       } else {
         setProjectDetail(null);
       }
@@ -223,6 +229,14 @@ export function TodoPage() {
             onSelect={setSelectedProjectId}
             onNewProjectName={setNewProjectName}
             onProjectTaskTitle={setProjectTaskTitle}
+            projectDescription={projectDescription}
+            completedItems={completedItems}
+            completedDraft={completedDraft}
+            onProjectDescription={setProjectDescription}
+            onCompletedDraft={setCompletedDraft}
+            onSaveProjectInfo={() => void mutate(() => patchTodoJson<Project>(`/api/todo/projects/${selectedProjectId}`, { description: projectDescription || null, completed_items: completedItems }))}
+            onAddCompleted={() => { const item = completedDraft.trim(); if (item) { setCompletedItems([...completedItems, item]); setCompletedDraft(""); } }}
+            onRemoveCompleted={(index) => setCompletedItems(completedItems.filter((_, i) => i !== index))}
             onCreateProject={() => void mutate(async () => {
               const created = await postTodoJson<Project>("/api/todo/projects", { name: newProjectName });
               setNewProjectName("");
@@ -350,10 +364,18 @@ function ProjectsContent({
   selectedProjectId,
   newProjectName,
   projectTaskTitle,
+  projectDescription,
+  completedItems,
+  completedDraft,
   mutating,
   onSelect,
   onNewProjectName,
   onProjectTaskTitle,
+  onProjectDescription,
+  onCompletedDraft,
+  onSaveProjectInfo,
+  onAddCompleted,
+  onRemoveCompleted,
   onCreateProject,
   onProjectStatus,
   onRenameProject,
@@ -367,10 +389,18 @@ function ProjectsContent({
   selectedProjectId: string;
   newProjectName: string;
   projectTaskTitle: string;
+  projectDescription: string;
+  completedItems: string[];
+  completedDraft: string;
   mutating: boolean;
   onSelect: (projectId: string) => void;
   onNewProjectName: (name: string) => void;
   onProjectTaskTitle: (title: string) => void;
+  onProjectDescription: (value: string) => void;
+  onCompletedDraft: (value: string) => void;
+  onSaveProjectInfo: () => void;
+  onAddCompleted: () => void;
+  onRemoveCompleted: (index: number) => void;
   onCreateProject: () => void;
   onProjectStatus: (projectId: string, status: ProjectStatus) => void;
   onRenameProject: (project: Project) => void;
@@ -413,8 +443,14 @@ function ProjectsContent({
               <input placeholder="Add a task to this project" value={projectTaskTitle} onChange={(event) => onProjectTaskTitle(event.target.value)} />
               <button className="todo-primary" type="submit" disabled={mutating || !projectTaskTitle.trim()}><Plus size={14} /> Add task</button>
             </form>
+            <section className="project-info-editor">
+              <label><span>Project description</span><textarea value={projectDescription} onChange={(event) => onProjectDescription(event.target.value)} placeholder="这个项目是做什么的？" /></label>
+              <div className="completed-items-editor"><span>已完成事项</span>{completedItems.map((item, index) => <div key={`${item}-${index}`}><span>{item}</span><button type="button" onClick={() => onRemoveCompleted(index)}>×</button></div>)}<form onSubmit={(event) => { event.preventDefault(); onAddCompleted(); }}><input value={completedDraft} onChange={(event) => onCompletedDraft(event.target.value)} placeholder="手动添加已完成事项" /><button type="submit"><Plus size={13} /> 添加</button></form></div>
+              <button className="todo-primary project-info-save" type="button" onClick={onSaveProjectInfo} disabled={mutating}>保存项目简介与已完成事项</button>
+            </section>
             <TaskSection title="Unfinished" message="No unfinished tasks in this Project." tasks={detail.unfinished_tasks} projects={projects} onPatch={onPatch} onDelete={onDeleteTask} />
             <TaskSection title="Completed" message="No completed tasks in this Project." tasks={detail.completed_tasks} projects={projects} onPatch={onPatch} onDelete={onDeleteTask} />
+            <p className="completed-source-note">已完成事项包含手动记录和下方自动归并的 completed tasks。</p>
           </>
         )}
       </div>
