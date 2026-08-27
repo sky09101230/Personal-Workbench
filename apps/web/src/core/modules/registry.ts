@@ -1,4 +1,4 @@
-import { BookOpen, Newspaper } from "lucide-react";
+import { BookOpen, ListTodo, Newspaper } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export type WorkbenchModule = {
@@ -23,5 +23,12 @@ export const moduleRegistry: WorkbenchModule[] = [
     description: "外部信息",
     path: "/news",
     icon: Newspaper,
+  },
+  {
+    id: "todo",
+    label: "Todo",
+    description: "行动工作台",
+    path: "/todo",
+    icon: ListTodo,
   },
 ];

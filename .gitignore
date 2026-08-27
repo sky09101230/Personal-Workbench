@@ -17,3 +17,5 @@ dist/
 *.sqlite3
 
 .DS_Store
+
+*.lnk
