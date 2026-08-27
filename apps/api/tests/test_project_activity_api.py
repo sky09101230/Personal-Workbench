@@ -10,6 +10,8 @@ from app.modules.project_activity.infrastructure.sqlite import SQLiteProjectActi
 
 @pytest.fixture
 def activity_client(tmp_path, override_service):
+    original_token = getattr(app.state, "project_activity_agent_token", "")
+    app.state.project_activity_agent_token = "test-agent-token"
     override_service(
         "project_activity_service",
         ProjectActivityService(
@@ -20,7 +22,13 @@ def activity_client(tmp_path, override_service):
         ),
     )
     with TestClient(app) as client:
+        client.headers.update({"Authorization": "Bearer test-agent-token"})
         yield client
+    app.state.project_activity_agent_token = original_token
+
+
+def _without_auth(client: TestClient) -> None:
+    client.headers.pop("Authorization", None)
 
 
 def test_project_activity_ingest_and_query_api_contract(activity_client) -> None:
@@ -141,3 +149,49 @@ def test_project_activity_api_maps_validation_not_found_and_conflict(activity_cl
         "/api/project-activity/projects/project-a/events?limit=0"
     )
     assert invalid_limit.status_code == 422
+
+
+def test_health_and_project_queries_are_public(activity_client) -> None:
+    _without_auth(activity_client)
+    assert activity_client.get("/api/health").status_code == 200
+    assert activity_client.get("/api/project-activity/projects/unknown/sources").status_code == 200
+    assert activity_client.get("/api/project-activity/projects/unknown/runs").status_code == 200
+    assert activity_client.get("/api/project-activity/projects/unknown/events").status_code == 200
+
+
+@pytest.mark.parametrize("authorization", [None, "Basic test-agent-token", "Bearer wrong-token"])
+def test_heartbeat_rejects_invalid_agent_credentials(activity_client, authorization) -> None:
+    if authorization is None:
+        _without_auth(activity_client)
+    headers = {} if authorization is None else {"Authorization": authorization}
+    response = activity_client.post(
+        "/api/project-activity/devices/heartbeat",
+        json={"device_id": "lab", "name": "Lab"},
+        headers=headers,
+    )
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_ingest_rejects_when_server_token_is_unconfigured(activity_client) -> None:
+    app.state.project_activity_agent_token = ""
+    assert activity_client.get("/api/health").status_code == 200
+    response = activity_client.post(
+        "/api/project-activity/devices/heartbeat",
+        json={"device_id": "lab", "name": "Lab"},
+    )
+    assert response.status_code == 503
+
+
+def test_authentication_failure_does_not_call_business_method(activity_client, override_service) -> None:
+    class SpyService:
+        def heartbeat_device(self, **kwargs):
+            raise AssertionError("business method must not be called")
+
+    override_service("project_activity_service", SpyService())
+    _without_auth(activity_client)
+    response = activity_client.post(
+        "/api/project-activity/devices/heartbeat",
+        json={"device_id": "lab", "name": "Lab"},
+    )
+    assert response.status_code == 401

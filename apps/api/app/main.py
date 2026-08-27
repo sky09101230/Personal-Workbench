@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     app.state.project_activity_service = ProjectActivityService(
         repository=SQLiteProjectActivityRepository(settings.database_url),
     )
+    app.state.project_activity_agent_token = settings.workbench_agent_token
     app.state.todo_service = TodoService(
         repository=SQLiteTodoRepository(settings.database_url),
         planner=DeepSeekTodoPlanner(settings),

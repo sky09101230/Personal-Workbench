@@ -1,8 +1,9 @@
 from dataclasses import asdict
 from datetime import datetime
+import secrets
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -63,6 +64,29 @@ def get_project_activity_service(request: Request) -> ProjectActivityService:
     return request.app.state.project_activity_service
 
 
+def require_agent_token(
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> None:
+    configured_token = getattr(request.app.state, "project_activity_agent_token", "")
+    if not configured_token:
+        raise HTTPException(status_code=503, detail="Agent authentication is not configured")
+
+    scheme, separator, token = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not separator or not token:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid agent credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not secrets.compare_digest(token, configured_token):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid agent credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
 async def project_activity_error_handler(
     _: Request, error: ProjectActivityError
 ) -> JSONResponse:
@@ -83,6 +107,7 @@ async def project_activity_error_handler(
 @router.post("/devices/heartbeat")
 def heartbeat_device(
     request: DeviceHeartbeat,
+    _: None = Depends(require_agent_token),
     service: ProjectActivityService = Depends(get_project_activity_service),
 ) -> object:
     return _json(service.heartbeat_device(**request.model_dump()))
@@ -91,6 +116,7 @@ def heartbeat_device(
 @router.post("/sources/observe")
 def observe_project_source(
     request: ProjectSourceObserve,
+    _: None = Depends(require_agent_token),
     service: ProjectActivityService = Depends(get_project_activity_service),
 ) -> object:
     return _json(service.observe_project_source(**request.model_dump()))
@@ -99,6 +125,7 @@ def observe_project_source(
 @router.post("/runs/observe")
 def observe_run(
     request: ActivityRunObserve,
+    _: None = Depends(require_agent_token),
     service: ProjectActivityService = Depends(get_project_activity_service),
 ) -> object:
     return _json(service.observe_run(**request.model_dump()))
@@ -107,6 +134,7 @@ def observe_run(
 @router.post("/events", status_code=status.HTTP_201_CREATED)
 def record_event(
     request: ActivityEventCreate,
+    _: None = Depends(require_agent_token),
     service: ProjectActivityService = Depends(get_project_activity_service),
 ) -> object:
     return _json(service.record_event(**request.model_dump()))
