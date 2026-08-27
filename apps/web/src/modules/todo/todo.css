@@ -51,7 +51,8 @@
 .proposal-items span { color: var(--accent); font-size: 10px; }
 .proposal-items small { grid-column: 1 / -1; color: var(--text-tertiary); font-size: 10px; }
 .proposal-actions { display: flex; gap: 7px; margin-top: 12px; }
-.proposal-actions .todo-primary { color: #fff; }
+.proposal-actions .todo-primary { min-width: 72px; color: #fff !important; background: var(--accent); border-color: var(--accent); }
+.proposal-actions button:not(.todo-primary) { min-width: 58px; color: var(--text-secondary) !important; background: var(--surface); }
 .project-overview-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
 .project-overview-grid article { border: 1px solid var(--border-subtle); border-radius: 6px; background: var(--surface-subtle); padding: 12px; }
 .project-overview-grid article > div { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
