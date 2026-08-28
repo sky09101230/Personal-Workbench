@@ -1,0 +1,1 @@
+"""Literature AI application boundary."""

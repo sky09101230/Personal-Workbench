@@ -1,5 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass
+import re
 
 from app.modules.literature.application.ports import LiteratureCache, LiteratureProvider
 from app.modules.literature.application.errors import LiteratureResourceNotFoundError, PdfUnavailableError
@@ -14,6 +15,12 @@ from app.modules.literature.domain.models import (
     PaperDetail,
     PaperPage,
     ProviderFile,
+)
+
+
+_SUPPLEMENTARY_PDF_PATTERN = re.compile(
+    r"(?:^|[^a-z0-9])(?:supp(?:l(?:ement(?:ary)?)?)?|supporting(?:[^a-z0-9]+information)?|moesm\d*|esm\d*)(?:[^a-z0-9]|$)",
+    re.IGNORECASE,
 )
 
 
@@ -99,13 +106,14 @@ class LiteratureService:
 
     def open_pdf(self, paper_id: str, *, range_header: str | None = None) -> ProviderFile:
         attachments = self.list_attachments(paper_id)
-        attachment = next(
+        attachment = min(
             (
                 item
                 for item in attachments
                 if item.downloadable and item.content_type == "application/pdf"
             ),
-            None,
+            key=_pdf_attachment_priority,
+            default=None,
         )
         if attachment is None:
             raise PdfUnavailableError("No accessible PDF attachment is available")
@@ -256,3 +264,11 @@ def _latest_version(*versions: str | None) -> str | None:
         return str(max(int(version) for version in candidates))
     except ValueError:
         return candidates[-1]
+
+
+def _pdf_attachment_priority(attachment: Attachment) -> tuple[bool, str, str]:
+    return (
+        bool(_SUPPLEMENTARY_PDF_PATTERN.search(attachment.filename)),
+        attachment.filename.casefold(),
+        attachment.id,
+    )

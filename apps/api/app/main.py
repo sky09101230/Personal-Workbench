@@ -2,9 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.modules.literature.application.ai.service import LiteratureAIService
 from app.modules.literature.application.service import LiteratureService
+from app.modules.literature.infrastructure.ai.deepseek_provider import (
+    DeepSeekLiteratureAIProvider,
+)
+from app.modules.literature.infrastructure.ai.paper_context import PaperContextBuilder
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository
 from app.modules.literature.infrastructure.providers.zotero.provider import ZoteroWebProvider
+from app.modules.literature.presentation.ai_router import router as literature_ai_router
 from app.modules.literature.presentation.router import router as literature_router
 from app.modules.news.application.service import NewsService
 from app.modules.news.infrastructure.cache.sqlite import SQLiteNewsRepository
@@ -38,9 +44,17 @@ def create_app() -> FastAPI:
     )
 
     # Composition is kept here so presentation code does not know the provider implementation.
-    app.state.literature_service = LiteratureService(
+    literature_repository = SQLiteLiteratureRepository(settings.database_url)
+    literature_service = LiteratureService(
         ZoteroWebProvider(settings),
-        SQLiteLiteratureRepository(settings.database_url),
+        literature_repository,
+    )
+    app.state.literature_service = literature_service
+    app.state.literature_ai_service = LiteratureAIService(
+        literature=literature_service,
+        provider=DeepSeekLiteratureAIProvider(settings),
+        context=PaperContextBuilder(literature_service, literature_repository),
+        repository=literature_repository,
     )
     app.state.news_service = NewsService(
         providers=(OpenAlexPaperProvider(settings), GitHubTrendingProvider()),
@@ -64,6 +78,11 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "workbench-api"}
 
     app.include_router(literature_router, prefix="/api/literature", tags=["literature"])
+    app.include_router(
+        literature_ai_router,
+        prefix="/api/literature",
+        tags=["literature-ai"],
+    )
     app.include_router(news_router, prefix="/api/news", tags=["news"])
     app.include_router(
         project_activity_router,
