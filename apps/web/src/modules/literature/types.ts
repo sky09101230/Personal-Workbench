@@ -71,3 +71,94 @@ export type SyncResponse = {
   notes: number;
   attachments: number;
 };
+
+export type OverviewContent = {
+  research_question: string;
+  core_idea: string;
+  methodology: string;
+  contributions: string[];
+  experiments: string;
+  key_results: string[];
+  limitations: string[];
+  worth_reading: string;
+  suggested_focus: string[];
+};
+
+export type DeepReadContent = {
+  research_problem: string;
+  core_logic: string;
+  key_assumptions: string[];
+  why_it_may_work: string;
+  evidence_assessment: string;
+  reproducible_parts: string[];
+  potential_problems: string[];
+  underdiscussed_limitations: string[];
+  unresolved_questions: string[];
+  research_inspirations: string[];
+};
+
+export type SelectionContent = {
+  action: "explain" | "summarize" | "translate" | "ask";
+  response: string;
+  paper_evidence: string[];
+  ai_inference: string[];
+  uncertainty: string;
+};
+
+export type AskPaperContent = {
+  answer: string;
+  paper_evidence: string[];
+  ai_inference: string[];
+  uncertainty: string;
+  insufficient_context: boolean;
+};
+
+export type LiteratureAIContent = OverviewContent | DeepReadContent | SelectionContent;
+
+export type LiteratureAIAnalysis = {
+  id: string;
+  paper_id: string;
+  analysis_type: string;
+  model: string;
+  prompt_version: string;
+  content: LiteratureAIContent;
+  created_at: string;
+};
+
+export type LiteratureAIConversation = {
+  id: string;
+  paper_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LiteratureAIMessage = {
+  id: string;
+  conversation_id: string;
+  role: "user" | "assistant";
+  content: { question: string } | AskPaperContent;
+  model: string | null;
+  prompt_version: string | null;
+  created_at: string;
+};
+
+export type LiteratureUserNote = {
+  id: string;
+  paper_id: string;
+  content: string;
+  source: "manual" | "ai_overview" | "ai_deep_read" | "ai_chat" | "ai_selection";
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnalysisListResponse = { items: LiteratureAIAnalysis[] };
+export type ConversationListResponse = { items: LiteratureAIConversation[] };
+export type MessageListResponse = { items: LiteratureAIMessage[] };
+export type UserNoteListResponse = { items: LiteratureUserNote[] };
+
+export type PdfSelection = {
+  pageNumber: number;
+  selectedText: string;
+  contextBefore: string;
+  contextAfter: string;
+};
