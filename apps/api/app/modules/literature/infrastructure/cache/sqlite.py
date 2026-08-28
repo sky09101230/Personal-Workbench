@@ -5,6 +5,14 @@ from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.modules.literature.domain.ai_models import (
+    LiteratureAIAnalysis,
+    LiteratureAIConversation,
+    LiteratureAIMessage,
+    LiteratureAIPaperTextPage,
+    LiteratureUserNote,
+    json_object,
+)
 from app.modules.literature.domain.models import (
     Attachment,
     ChangedPaper,
@@ -143,6 +151,69 @@ _MIGRATIONS = (
             "ALTER TABLE literature_notes ADD COLUMN color TEXT",
             "ALTER TABLE literature_attachments ADD COLUMN link_mode TEXT",
             "UPDATE literature_library_state SET library_version = NULL, sync_state = 'not_started'",
+        ),
+    ),
+    _Migration(
+        version=3,
+        statements=(
+            "SELECT 1",
+            """
+            CREATE TABLE literature_ai_analyses (
+                id TEXT PRIMARY KEY,
+                paper_id TEXT NOT NULL,
+                analysis_type TEXT NOT NULL,
+                model TEXT NOT NULL,
+                prompt_version TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE literature_ai_conversations (
+                id TEXT PRIMARY KEY,
+                paper_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE literature_ai_messages (
+                id TEXT PRIMARY KEY,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content_json TEXT NOT NULL,
+                model TEXT,
+                prompt_version TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (conversation_id)
+                    REFERENCES literature_ai_conversations(id) ON DELETE CASCADE
+            )
+            """,
+            """
+            CREATE TABLE literature_ai_paper_text (
+                paper_id TEXT NOT NULL,
+                page_number INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                extractor_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (paper_id, page_number)
+            )
+            """,
+            """
+            CREATE TABLE literature_user_notes (
+                id TEXT PRIMARY KEY,
+                paper_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                source TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX literature_ai_analyses_paper_idx ON literature_ai_analyses(paper_id, analysis_type, created_at)",
+            "CREATE INDEX literature_ai_conversations_paper_idx ON literature_ai_conversations(paper_id, updated_at)",
+            "CREATE INDEX literature_ai_messages_conversation_idx ON literature_ai_messages(conversation_id, created_at)",
+            "CREATE INDEX literature_user_notes_paper_idx ON literature_user_notes(paper_id, updated_at)",
         ),
     ),
 )
@@ -674,6 +745,258 @@ class SQLiteLiteratureRepository:
                 connection.rollback()
                 raise
 
+    def list_analyses(
+        self,
+        paper_id: str,
+        *,
+        analysis_type: str | None = None,
+    ) -> tuple[LiteratureAIAnalysis, ...]:
+        self.ensure_schema()
+        query = """
+            SELECT id, paper_id, analysis_type, model, prompt_version, content_json, created_at
+            FROM literature_ai_analyses
+            WHERE paper_id = ?
+        """
+        parameters: tuple[object, ...] = (paper_id,)
+        if analysis_type is not None:
+            query += " AND analysis_type = ?"
+            parameters = (paper_id, analysis_type)
+        query += " ORDER BY created_at DESC, id DESC"
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return tuple(_analysis_from_row(row) for row in rows)
+
+    def get_analysis(self, analysis_id: str) -> LiteratureAIAnalysis | None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT id, paper_id, analysis_type, model, prompt_version, content_json, created_at
+                FROM literature_ai_analyses
+                WHERE id = ?
+                """,
+                (analysis_id,),
+            ).fetchone()
+        return _analysis_from_row(row) if row is not None else None
+
+    def save_analysis(self, analysis: LiteratureAIAnalysis) -> None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO literature_ai_analyses
+                    (id, paper_id, analysis_type, model, prompt_version, content_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    analysis.id,
+                    analysis.paper_id,
+                    analysis.analysis_type,
+                    analysis.model,
+                    analysis.prompt_version,
+                    json.dumps(analysis.content, ensure_ascii=False),
+                    analysis.created_at,
+                ),
+            )
+            connection.commit()
+
+    def create_conversation(self, conversation: LiteratureAIConversation) -> None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO literature_ai_conversations (id, paper_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    conversation.id,
+                    conversation.paper_id,
+                    conversation.created_at,
+                    conversation.updated_at,
+                ),
+            )
+            connection.commit()
+
+    def get_conversation(self, conversation_id: str) -> LiteratureAIConversation | None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT id, paper_id, created_at, updated_at
+                FROM literature_ai_conversations
+                WHERE id = ?
+                """,
+                (conversation_id,),
+            ).fetchone()
+        return _conversation_from_row(row) if row is not None else None
+
+    def list_conversations(self, paper_id: str) -> tuple[LiteratureAIConversation, ...]:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, paper_id, created_at, updated_at
+                FROM literature_ai_conversations
+                WHERE paper_id = ?
+                ORDER BY updated_at DESC, id DESC
+                """,
+                (paper_id,),
+            ).fetchall()
+        return tuple(_conversation_from_row(row) for row in rows)
+
+    def list_messages(self, conversation_id: str) -> tuple[LiteratureAIMessage, ...]:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, conversation_id, role, content_json, model, prompt_version, created_at
+                FROM literature_ai_messages
+                WHERE conversation_id = ?
+                ORDER BY created_at, rowid
+                """,
+                (conversation_id,),
+            ).fetchall()
+        return tuple(_message_from_row(row) for row in rows)
+
+    def get_message(self, message_id: str) -> LiteratureAIMessage | None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            row = connection.execute(
+                """
+                SELECT id, conversation_id, role, content_json, model, prompt_version, created_at
+                FROM literature_ai_messages
+                WHERE id = ?
+                """,
+                (message_id,),
+            ).fetchone()
+        return _message_from_row(row) if row is not None else None
+
+    def save_message(self, message: LiteratureAIMessage) -> None:
+        self.save_messages((message,))
+
+    def save_messages(self, messages: tuple[LiteratureAIMessage, ...]) -> None:
+        if not messages:
+            return
+        conversation_id = messages[0].conversation_id
+        if any(message.conversation_id != conversation_id for message in messages):
+            raise ValueError("All messages must belong to the same conversation")
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.executemany(
+                    """
+                    INSERT INTO literature_ai_messages
+                        (id, conversation_id, role, content_json, model, prompt_version, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        (
+                            message.id,
+                            message.conversation_id,
+                            message.role,
+                            json.dumps(message.content, ensure_ascii=False),
+                            message.model,
+                            message.prompt_version,
+                            message.created_at,
+                        )
+                        for message in messages
+                    ),
+                )
+                connection.execute(
+                    "UPDATE literature_ai_conversations SET updated_at = ? WHERE id = ?",
+                    (messages[-1].created_at, conversation_id),
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
+    def list_paper_text(self, paper_id: str) -> tuple[LiteratureAIPaperTextPage, ...]:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT paper_id, page_number, text, extractor_version, created_at, updated_at
+                FROM literature_ai_paper_text
+                WHERE paper_id = ?
+                ORDER BY page_number
+                """,
+                (paper_id,),
+            ).fetchall()
+        return tuple(_paper_text_from_row(row) for row in rows)
+
+    def replace_paper_text(
+        self,
+        paper_id: str,
+        pages: tuple[LiteratureAIPaperTextPage, ...],
+    ) -> None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    "DELETE FROM literature_ai_paper_text WHERE paper_id = ?",
+                    (paper_id,),
+                )
+                connection.executemany(
+                    """
+                    INSERT INTO literature_ai_paper_text
+                        (paper_id, page_number, text, extractor_version, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        (
+                            page.paper_id,
+                            page.page_number,
+                            page.text,
+                            page.extractor_version,
+                            page.created_at,
+                            page.updated_at,
+                        )
+                        for page in pages
+                    ),
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
+    def list_user_notes(self, paper_id: str) -> tuple[LiteratureUserNote, ...]:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT id, paper_id, content, source, created_at, updated_at
+                FROM literature_user_notes
+                WHERE paper_id = ?
+                ORDER BY updated_at DESC, id DESC
+                """,
+                (paper_id,),
+            ).fetchall()
+        return tuple(_user_note_from_row(row) for row in rows)
+
+    def save_user_note(self, note: LiteratureUserNote) -> None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            connection.execute(
+                """
+                INSERT INTO literature_user_notes
+                    (id, paper_id, content, source, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    note.id,
+                    note.paper_id,
+                    note.content,
+                    note.source,
+                    note.created_at,
+                    note.updated_at,
+                ),
+            )
+            connection.commit()
+
     def mark_sync_failed(self, *, provider: str, library_id: str, error: str) -> None:
         self.ensure_schema()
         with sqlite3.connect(self._database_path) as connection:
@@ -796,6 +1119,61 @@ def _attachment_from_row(row: tuple[object, ...]) -> Attachment:
         downloadable=bool(row[4]),
         link_mode=str(row[5]) if row[5] is not None else None,
         external_ref=_external_reference_from_values(row[6:9]),
+    )
+
+
+def _analysis_from_row(row: tuple[object, ...]) -> LiteratureAIAnalysis:
+    return LiteratureAIAnalysis(
+        id=str(row[0]),
+        paper_id=str(row[1]),
+        analysis_type=str(row[2]),
+        model=str(row[3]),
+        prompt_version=str(row[4]),
+        content=json_object(json.loads(str(row[5]))),
+        created_at=str(row[6]),
+    )
+
+
+def _conversation_from_row(row: tuple[object, ...]) -> LiteratureAIConversation:
+    return LiteratureAIConversation(
+        id=str(row[0]),
+        paper_id=str(row[1]),
+        created_at=str(row[2]),
+        updated_at=str(row[3]),
+    )
+
+
+def _message_from_row(row: tuple[object, ...]) -> LiteratureAIMessage:
+    return LiteratureAIMessage(
+        id=str(row[0]),
+        conversation_id=str(row[1]),
+        role=str(row[2]),
+        content=json_object(json.loads(str(row[3]))),
+        model=str(row[4]) if row[4] is not None else None,
+        prompt_version=str(row[5]) if row[5] is not None else None,
+        created_at=str(row[6]),
+    )
+
+
+def _paper_text_from_row(row: tuple[object, ...]) -> LiteratureAIPaperTextPage:
+    return LiteratureAIPaperTextPage(
+        paper_id=str(row[0]),
+        page_number=int(row[1]),
+        text=str(row[2]),
+        extractor_version=str(row[3]),
+        created_at=str(row[4]),
+        updated_at=str(row[5]),
+    )
+
+
+def _user_note_from_row(row: tuple[object, ...]) -> LiteratureUserNote:
+    return LiteratureUserNote(
+        id=str(row[0]),
+        paper_id=str(row[1]),
+        content=str(row[2]),
+        source=str(row[3]),
+        created_at=str(row[4]),
+        updated_at=str(row[5]),
     )
 
 

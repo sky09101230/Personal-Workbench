@@ -118,6 +118,28 @@ def test_cached_search_detail_notes_attachments_and_pdf_endpoints(
     assert download.headers["content-disposition"].startswith("attachment;")
 
 
+def test_pdf_endpoint_prefers_main_pdf_over_supplementary_attachment(
+    tmp_path, override_service
+) -> None:
+    provider = _MultiplePdfProvider()
+    override_service(
+        "literature_service",
+        LiteratureService(
+            provider,
+            SQLiteLiteratureRepository(
+                f"sqlite:///{(tmp_path / 'multiple-pdfs.db').as_posix()}"
+            ),
+        ),
+    )
+    assert client.post("/api/literature/sync").status_code == 200
+
+    response = client.get("/api/literature/papers/zotero:123:PAPER/pdf")
+
+    assert response.status_code == 200
+    assert response.content == b"%PDF-main"
+    assert provider.opened_attachment_id == "zotero:123:MAIN"
+
+
 def test_linked_pdf_is_reported_without_attempting_a_download(
     tmp_path, override_service
 ) -> None:
@@ -222,6 +244,49 @@ class _StubProvider:
             content_length="4",
             content_range="bytes 0-3/4" if range_header else None,
             accept_ranges="bytes",
+        )
+
+
+class _MultiplePdfProvider(_StubProvider):
+    def __init__(self) -> None:
+        self.opened_attachment_id: str | None = None
+
+    def list_assets(self) -> LiteratureAssets:
+        return LiteratureAssets(
+            attachments=(
+                Attachment(
+                    id="zotero:123:SUPPLEMENT",
+                    paper_id="zotero:123:PAPER",
+                    filename="42005_2025_2081_MOESM1_ESM.pdf",
+                    content_type="application/pdf",
+                    downloadable=True,
+                    link_mode="imported_file",
+                    external_ref=ExternalReference("zotero", "123", "SUPPLEMENT"),
+                ),
+                Attachment(
+                    id="zotero:123:MAIN",
+                    paper_id="zotero:123:PAPER",
+                    filename="Optoelectronic generative adversarial networks.pdf",
+                    content_type="application/pdf",
+                    downloadable=True,
+                    link_mode="imported_url",
+                    external_ref=ExternalReference("zotero", "123", "MAIN"),
+                ),
+            ),
+            library_version="42",
+        )
+
+    def open_attachment(
+        self,
+        attachment: Attachment,
+        *,
+        range_header: str | None = None,
+    ) -> ProviderFile:
+        self.opened_attachment_id = attachment.id
+        return ProviderFile(
+            filename=attachment.filename,
+            content_type="application/pdf",
+            chunks=(b"%PDF-main",),
         )
 
 
