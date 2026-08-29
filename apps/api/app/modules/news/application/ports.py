@@ -2,6 +2,11 @@ from collections.abc import Iterable, Mapping
 from typing import Protocol
 
 from app.modules.news.domain.models import FeedItem, FeedItemType, FeedPage, Topic
+from app.modules.news.domain.research_models import (
+    PaperResearchFeedPage,
+    PaperResearchIngest,
+    PaperResearchIngestResult,
+)
 
 
 class NewsSourcePort(Protocol):
@@ -23,6 +28,20 @@ class NewsSummarizerPort(Protocol):
 
 
 class NewsRepository(Protocol):
+    def ingest_paper_research(
+        self,
+        payload: PaperResearchIngest,
+    ) -> PaperResearchIngestResult:
+        ...
+
+    def list_paper_research(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> PaperResearchFeedPage:
+        ...
+
     def get_source_refresh_slot(self, source: str) -> str | None:
         ...
 

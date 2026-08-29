@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getNewsJson, postNewsJson } from "./api";
 import { FeedCard } from "./components/FeedCard";
 import type {
+  FeedItem,
   FeedItemType,
   FeedPage,
   RefreshResult,
@@ -45,7 +46,20 @@ export function NewsPage() {
     setLoading(true);
     setError(false);
     try {
-      setFeed(await getNewsJson<FeedPage>(`/api/news/feed?${params}`));
+      const providerFeedRequest = getNewsJson<FeedPage>(`/api/news/feed?${params}`);
+      if (typeFilter === "paper" && !topicFilter) {
+        const researchParams = new URLSearchParams({
+          limit: String(pageSize),
+          offset: String(offset),
+        });
+        const [providerFeed, researchFeed] = await Promise.all([
+          providerFeedRequest,
+          getNewsJson<FeedPage>(`/api/news/papers/research?${researchParams}`),
+        ]);
+        setFeed(mergePaperFeeds(providerFeed, researchFeed));
+      } else {
+        setFeed(await providerFeedRequest);
+      }
     } catch {
       setError(true);
     } finally {
@@ -194,4 +208,36 @@ function NewsState({ icon, title, message }: { icon: React.ReactNode; title: str
       <p>{message}</p>
     </div>
   );
+}
+
+function mergePaperFeeds(providerFeed: FeedPage, researchFeed: FeedPage): FeedPage {
+  const items = new Map<string, FeedItem>();
+  for (const item of [...researchFeed.items, ...providerFeed.items]) {
+    const identity = paperIdentity(item);
+    if (!items.has(identity)) items.set(identity, item);
+  }
+  return {
+    items: [...items.values()].sort((left, right) => {
+      const leftDate = left.published_at ?? left.fetched_at ?? "";
+      const rightDate = right.published_at ?? right.fetched_at ?? "";
+      return rightDate.localeCompare(leftDate) || left.id.localeCompare(right.id);
+    }),
+    total: providerFeed.total + researchFeed.total,
+    limit: providerFeed.limit,
+    offset: providerFeed.offset,
+  };
+}
+
+function paperIdentity(item: FeedItem): string {
+  const doi = typeof item.metadata.doi === "string"
+    ? item.metadata.doi
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\/(?:dx\.)?doi\.org\//, "")
+      .replace(/^doi:\s*/, "")
+    : null;
+  if (doi) return `doi:${doi}`;
+  if (typeof item.metadata.arxiv_id === "string") return `arxiv:${item.metadata.arxiv_id.toLowerCase()}`;
+  if (typeof item.metadata.openalex_id === "string") return `openalex:${item.metadata.openalex_id.toUpperCase()}`;
+  return item.id;
 }
