@@ -7,6 +7,12 @@ from zoneinfo import ZoneInfo
 from app.modules.news.application.errors import InvalidFeedItemError, NewsError, NewsSourceError
 from app.modules.news.application.ports import NewsRepository, NewsSourcePort, NewsSummarizerPort
 from app.modules.news.domain.models import FeedItem, FeedItemType, FeedPage, RefreshResult, Topic
+from app.modules.news.application.research import normalize_research_ingest
+from app.modules.news.domain.research_models import (
+    PaperResearchFeedPage,
+    PaperResearchIngest,
+    PaperResearchIngestResult,
+)
 
 
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -41,6 +47,20 @@ class NewsService:
 
     def list_topics(self) -> tuple[Topic, ...]:
         return self.topics
+
+    def ingest_paper_research(
+        self,
+        payload: PaperResearchIngest,
+    ) -> PaperResearchIngestResult:
+        return self.repository.ingest_paper_research(normalize_research_ingest(payload))
+
+    def list_paper_research(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> PaperResearchFeedPage:
+        return self.repository.list_paper_research(limit=limit, offset=offset)
 
     def refresh(self, *, item_type: FeedItemType | None = None) -> RefreshResult:
         with self.refresh_lock:

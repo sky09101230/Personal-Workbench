@@ -1,0 +1,169 @@
+{
+  "schema_version": "1",
+  "task_key": "d2nn-foundational-papers",
+  "run_key": "2026-08-29-d2nn-001",
+  "generated_at": "2026-08-29T08:00:00Z",
+  "agent": {
+    "type": "codex",
+    "model": "gpt-5",
+    "prompt_version": "paper_research_v1"
+  },
+  "query_plan": [
+    "diffractive neural network",
+    "optical neural network",
+    "diffractive optical computing",
+    "metasurface optical computing"
+  ],
+  "papers": [
+    {
+      "title": "All-optical machine learning using diffractive deep neural networks",
+      "authors": [
+        "Xing Lin",
+        "Yair Rivenson",
+        "Nezih T. Yardimci",
+        "Muhammed Veli",
+        "Yi Luo",
+        "Mona Jarrahi",
+        "Aydogan Ozcan"
+      ],
+      "doi": "https://doi.org/10.1126/science.aat8084",
+      "arxiv_id": "1804.08711",
+      "openalex_id": "W2798701005",
+      "published_at": "2018-07-26",
+      "venue": "Science",
+      "url": "https://doi.org/10.1126/science.aat8084",
+      "pdf_url": null,
+      "abstract": "The work introduces a multilayer passive diffractive optical network trained digitally and demonstrates terahertz classification and imaging with fabricated layers.",
+      "topics": ["diffractive neural network", "all-optical machine learning"],
+      "matched_topics": ["diffractive-neural-networks", "optical-computing"],
+      "ai_summary": "The paper establishes the D2NN framework: learned phase and amplitude modulation across passive diffractive layers performs inference through optical propagation after offline training.",
+      "recommendation_reason": "It is the foundational experimental reference for D2NN architecture, physical neuron interpretation, passive inference, and the gap between digital training and optical execution.",
+      "relevance_score": 1.0,
+      "novelty_score": 0.98,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "publisher",
+        "source_id": "10.1126/science.aat8084"
+      }
+    },
+    {
+      "title": "Design of task-specific optical systems using broadband diffractive neural networks",
+      "authors": [
+        "Yi Luo",
+        "Deniz Mengu",
+        "Nezih T. Yardimci",
+        "Yair Rivenson",
+        "Muhammed Veli",
+        "Mona Jarrahi",
+        "Aydogan Ozcan"
+      ],
+      "doi": "10.1038/s41377-019-0223-1",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2019-12-02",
+      "venue": "Light: Science & Applications",
+      "url": "https://www.nature.com/articles/s41377-019-0223-1",
+      "pdf_url": null,
+      "abstract": "Broadband diffractive networks jointly use wave propagation and material dispersion to implement learned spectral filtering and wavelength demultiplexing with pulsed terahertz illumination.",
+      "topics": ["broadband diffractive network", "spectral optical computing"],
+      "matched_topics": ["diffractive-neural-networks", "optical-computing"],
+      "ai_summary": "Seven fabricated multilayer systems show that D2NN-style inverse design extends beyond monochromatic inference to broadband spectral filtering and spatial wavelength demultiplexing.",
+      "recommendation_reason": "It tests how diffractive learning interacts with bandwidth and dispersion, which is important when moving D2NN designs from ideal single-wavelength simulation toward practical optical systems.",
+      "relevance_score": 0.93,
+      "novelty_score": 0.88,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "publisher",
+        "source_id": "10.1038/s41377-019-0223-1"
+      }
+    },
+    {
+      "title": "Performing optical logic operations by a diffractive neural network",
+      "authors": [
+        "Chao Qian",
+        "Xiao Lin",
+        "Xiaobin Lin",
+        "Jian Xu",
+        "Yang Sun",
+        "Erping Li",
+        "Baile Zhang",
+        "Hongsheng Chen"
+      ],
+      "doi": "doi:10.1038/s41377-020-0303-2",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2020-04-13",
+      "venue": "Light: Science & Applications",
+      "url": "https://www.nature.com/articles/s41377-020-0303-2",
+      "pdf_url": null,
+      "abstract": "A compound Huygens metasurface is trained as a diffractive network that maps spatially encoded plane-wave inputs to binary output regions for optical logic operations.",
+      "topics": ["metasurface optical computing", "diffractive optical logic"],
+      "matched_topics": ["diffractive-neural-networks", "metasurface"],
+      "ai_summary": "The study uses trained metasurface layers to implement all seven basic logic operations in one diffractive design and experimentally demonstrates NOT, OR, and AND at microwave frequencies.",
+      "recommendation_reason": "It provides a concrete bridge between D2NN optimization and metasurface hardware, with output-plane decision regions that are directly comparable to optical classification architectures.",
+      "relevance_score": 0.91,
+      "novelty_score": 0.86,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "publisher",
+        "source_id": "10.1038/s41377-020-0303-2"
+      }
+    },
+    {
+      "title": "Space-efficient optical computing with an integrated chip diffractive neural network",
+      "authors": ["H. H. Zhu", "J. Zou", "H. Zhang", "A. Q. Liu"],
+      "doi": "10.1038/s41467-022-28702-0",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2022-02-24",
+      "venue": "Nature Communications",
+      "url": "https://www.nature.com/articles/s41467-022-28702-0",
+      "pdf_url": null,
+      "abstract": "An integrated diffractive optical network combines two compact diffractive cells with a linearly scaling Mach-Zehnder stage for Fourier transforms, convolution, and learned classification.",
+      "topics": ["integrated diffractive neural network", "photonic convolution"],
+      "matched_topics": ["diffractive-neural-networks", "optical-computing"],
+      "ai_summary": "The chip architecture replaces quadratic MZI scaling with diffractive Fourier cells plus N interferometers and reports roughly tenfold footprint and energy reductions with MNIST and Fashion-MNIST experiments.",
+      "recommendation_reason": "It is a useful integration counterpoint to free-space D2NNs and exposes concrete scaling, footprint, and energy claims for diffractive optical computing hardware.",
+      "relevance_score": 0.95,
+      "novelty_score": 0.9,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "publisher",
+        "source_id": "10.1038/s41467-022-28702-0"
+      }
+    },
+    {
+      "title": "Photonic machine learning with on-chip diffractive optics",
+      "authors": [
+        "Tingzhao Fu",
+        "Yubin Zang",
+        "Yuyao Huang",
+        "Zhenmin Du",
+        "Honghao Huang",
+        "Chengyang Hu",
+        "Minghua Chen",
+        "Sigang Yang",
+        "Hongwei Chen"
+      ],
+      "doi": "https://doi.org/10.1038/s41467-022-35772-7",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2023-01-05",
+      "venue": "Nature Communications",
+      "url": "https://www.nature.com/articles/s41467-022-35772-7",
+      "pdf_url": null,
+      "abstract": "Silicon-on-insulator one-dimensional dielectric metasurfaces form passive hidden layers in fabricated on-chip diffractive neural networks for Iris and MNIST classification.",
+      "topics": ["on-chip diffractive optics", "dielectric metasurface", "optical neural network"],
+      "matched_topics": ["diffractive-neural-networks", "metasurface", "optical-computing"],
+      "ai_summary": "Fabricated one- and three-layer on-chip DONNs demonstrate Iris classification, while a three-layer device also tests MNIST; calibration is used to mitigate fabrication and implementation errors.",
+      "recommendation_reason": "It directly studies compact dielectric-metasurface DONNs and reports physical footprints, measured accuracies, and calibration issues relevant to deployable optical neural hardware.",
+      "relevance_score": 0.97,
+      "novelty_score": 0.91,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "publisher",
+        "source_id": "10.1038/s41467-022-35772-7"
+      }
+    }
+  ]
+}

@@ -26,12 +26,25 @@ export function FeedCard({
   const Icon = presentation.icon;
   const detail = typeDetail(item);
   const aiSummary = item.metadata.summary_kind === "ai";
+  const research = item.metadata.research_kind === "ai_research";
+  const recommendationReason = research && typeof item.metadata.recommendation_reason === "string"
+    ? item.metadata.recommendation_reason
+    : null;
+  const relevanceScore = research && typeof item.metadata.relevance_score === "number"
+    ? item.metadata.relevance_score
+    : null;
+  const noveltyScore = research && typeof item.metadata.novelty_score === "number"
+    ? item.metadata.novelty_score
+    : null;
 
   return (
-    <article className={`feed-card feed-card-${item.type}`}>
+    <article className={`feed-card feed-card-${item.type}${research ? " feed-card-research" : ""}`}>
       <div className="feed-card-meta">
-        <span className="feed-type"><Icon size={13} />{presentation.label}</span>
-        <span>{item.source}</span>
+        <span className="feed-type">
+          {research ? <Sparkles size={13} /> : <Icon size={13} />}
+          {research ? "AI Research" : presentation.label}
+        </span>
+        <span>{research ? researchProvenance(item) : item.source}</span>
         {item.published_at ? <time dateTime={item.published_at}>{formatDate(item.published_at)}</time> : null}
       </div>
       <div className="feed-card-heading">
@@ -49,14 +62,44 @@ export function FeedCard({
           <p className="feed-summary">{item.summary}</p>
         </div>
       ) : null}
+      {recommendationReason ? (
+        <div className="feed-recommendation-block">
+          <span className="feed-summary-label">Why recommended</span>
+          <p className="feed-recommendation">{recommendationReason}</p>
+        </div>
+      ) : null}
       <div className="feed-card-footer">
         <div className="feed-topics">
           {item.topics.map((topic) => <span key={topic}>{topicNames[topic] ?? topic}</span>)}
         </div>
-        {detail ? <span className="feed-detail">{detail}</span> : null}
+        <div className="feed-card-details">
+          {research ? (
+            <span className="feed-research-scores">
+              {relevanceScore !== null ? `Relevance ${formatScore(relevanceScore)}` : null}
+              {noveltyScore !== null ? ` · Novelty ${formatScore(noveltyScore)}` : null}
+            </span>
+          ) : null}
+          {detail ? <span className="feed-detail">{detail}</span> : null}
+        </div>
       </div>
     </article>
   );
+}
+
+function researchProvenance(item: FeedItem): string {
+  const source = item.metadata.source;
+  const run = item.metadata.research_run;
+  const provider = isRecord(source) && typeof source.provider === "string" ? source.provider : "external";
+  const model = isRecord(run) && typeof run.agent_model === "string" ? run.agent_model : null;
+  return [provider, model].filter(Boolean).join(" · ");
+}
+
+function formatScore(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function typeDetail(item: FeedItem): string | null {

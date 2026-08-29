@@ -8,3 +8,7 @@ class NewsSourceError(NewsError):
 
 class InvalidFeedItemError(NewsError):
     code = "invalid_feed_item"
+
+
+class PaperResearchIdentityConflictError(NewsError):
+    code = "paper_research_identity_conflict"

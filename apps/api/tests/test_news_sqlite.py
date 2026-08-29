@@ -15,8 +15,8 @@ def test_news_schema_is_idempotent_and_domain_isolated(tmp_path) -> None:
         connection.commit()
 
     repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
-    assert repository.ensure_schema().version == 2
-    assert repository.ensure_schema().version == 2
+    assert repository.ensure_schema().version == 3
+    assert repository.ensure_schema().version == 3
 
     with sqlite3.connect(database_path) as connection:
         tables = {
@@ -35,9 +35,76 @@ def test_news_schema_is_idempotent_and_domain_isolated(tmp_path) -> None:
         "news_source_state",
         "news_user_state",
         "news_schema_migrations",
+        "news_papers",
+        "news_paper_research_runs",
+        "news_paper_research_recommendations",
     }.issubset(tables)
     assert migration_count == 1
     assert sentinel == "keep"
+
+
+def test_news_schema_upgrades_v2_without_losing_existing_feed(tmp_path) -> None:
+    database_path = tmp_path / "upgrade.db"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE news_schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.execute("INSERT INTO news_schema_migrations (version) VALUES (2)")
+        connection.execute(
+            """
+            CREATE TABLE news_feed_items (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                source TEXT NOT NULL,
+                title TEXT NOT NULL,
+                summary TEXT,
+                url TEXT NOT NULL,
+                authors_json TEXT NOT NULL,
+                published_at TEXT,
+                fetched_at TEXT,
+                metadata_json TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO news_feed_items (
+                id, type, source, title, url, authors_json, metadata_json
+            ) VALUES ('openalex:existing', 'paper', 'openalex', 'Existing',
+                      'https://example.com/existing', '[]', '{}')
+            """
+        )
+        connection.commit()
+
+    repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
+    assert repository.ensure_schema().version == 3
+
+    with sqlite3.connect(database_path) as connection:
+        versions = connection.execute(
+            "SELECT version FROM news_schema_migrations ORDER BY version"
+        ).fetchall()
+        existing = connection.execute(
+            "SELECT title FROM news_feed_items WHERE id = 'openalex:existing'"
+        ).fetchone()[0]
+        research_tables = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'news_paper%'"
+            )
+        }
+
+    assert versions == [(2,), (3,)]
+    assert existing == "Existing"
+    assert research_tables == {
+        "news_papers",
+        "news_paper_research_runs",
+        "news_paper_research_recommendations",
+    }
 
 
 def test_refresh_preserves_user_state_and_supports_feed_filters(tmp_path) -> None:
