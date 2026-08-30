@@ -26,4 +26,3 @@
 - [x] Ingest the real V0.1 output twice through HTTP and confirm stable SQLite counts.
 - [x] Restart/recreate backend and refresh browser to confirm persistence.
 - [x] Commit and push both feature branches independently.
-
