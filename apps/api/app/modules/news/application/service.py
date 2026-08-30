@@ -12,6 +12,8 @@ from app.modules.news.domain.research_models import (
     PaperResearchFeedPage,
     PaperResearchIngest,
     PaperResearchIngestResult,
+    PaperResearchRadarRun,
+    PaperResearchReviewResult,
 )
 
 
@@ -61,6 +63,19 @@ class NewsService:
         offset: int = 0,
     ) -> PaperResearchFeedPage:
         return self.repository.list_paper_research(limit=limit, offset=offset)
+
+    def latest_literature_radar(self) -> PaperResearchRadarRun | None:
+        return self.repository.latest_literature_radar()
+
+    def update_paper_research_review(
+        self,
+        recommendation_id: str,
+        review_status: str,
+    ) -> PaperResearchReviewResult | None:
+        return self.repository.update_paper_research_review(
+            recommendation_id,
+            review_status,
+        )
 
     def refresh(self, *, item_type: FeedItemType | None = None) -> RefreshResult:
         with self.refresh_lock:

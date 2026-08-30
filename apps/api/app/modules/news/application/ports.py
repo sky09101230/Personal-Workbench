@@ -6,6 +6,8 @@ from app.modules.news.domain.research_models import (
     PaperResearchFeedPage,
     PaperResearchIngest,
     PaperResearchIngestResult,
+    PaperResearchRadarRun,
+    PaperResearchReviewResult,
 )
 
 
@@ -40,6 +42,16 @@ class NewsRepository(Protocol):
         limit: int = 20,
         offset: int = 0,
     ) -> PaperResearchFeedPage:
+        ...
+
+    def latest_literature_radar(self) -> PaperResearchRadarRun | None:
+        ...
+
+    def update_paper_research_review(
+        self,
+        recommendation_id: str,
+        review_status: str,
+    ) -> PaperResearchReviewResult | None:
         ...
 
     def get_source_refresh_slot(self, source: str) -> str | None:

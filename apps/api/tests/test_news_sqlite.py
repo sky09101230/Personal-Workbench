@@ -15,8 +15,8 @@ def test_news_schema_is_idempotent_and_domain_isolated(tmp_path) -> None:
         connection.commit()
 
     repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
-    assert repository.ensure_schema().version == 3
-    assert repository.ensure_schema().version == 3
+    assert repository.ensure_schema().version == 4
+    assert repository.ensure_schema().version == 4
 
     with sqlite3.connect(database_path) as connection:
         tables = {
@@ -82,7 +82,7 @@ def test_news_schema_upgrades_v2_without_losing_existing_feed(tmp_path) -> None:
         connection.commit()
 
     repository = SQLiteNewsRepository(f"sqlite:///{database_path.as_posix()}")
-    assert repository.ensure_schema().version == 3
+    assert repository.ensure_schema().version == 4
 
     with sqlite3.connect(database_path) as connection:
         versions = connection.execute(
@@ -98,7 +98,7 @@ def test_news_schema_upgrades_v2_without_losing_existing_feed(tmp_path) -> None:
             )
         }
 
-    assert versions == [(2,), (3,)]
+    assert versions == [(2,), (4,)]
     assert existing == "Existing"
     assert research_tables == {
         "news_papers",

@@ -1,0 +1,611 @@
+{
+  "schema_version": "2",
+  "task_key": "literature-radar:demo",
+  "run_key": "radar-demo-20260829T174702Z-aaaaaaaaaaaaaaaa",
+  "generated_at": "2026-08-29T17:47:02Z",
+  "agent": {
+    "type": "literature-radar",
+    "model": "not-recorded",
+    "prompt_version": "v0.1"
+  },
+  "query_plan": [
+    "synthetic diffractive computing query",
+    "synthetic optical computing query"
+  ],
+  "papers": [
+    {
+      "title": "Synthetic Recommended Paper 1",
+      "authors": [
+        "Example Author 1",
+        "Test Collaborator"
+      ],
+      "doi": "10.1234/synthetic.1",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2026-08-23",
+      "venue": "Synthetic Optics Journal",
+      "publication_type": "journal",
+      "url": "https://example.org/recommended-1",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "Synthetic AI summary for recommended paper 1.",
+      "recommendation_reason": "Synthetic recommendation reason 1 matches the demo profile.",
+      "relevance_score": 0.95,
+      "novelty_score": 0.9,
+      "scientific_value_score": 0.89,
+      "recency_score": 0.88,
+      "overall_score": 0.91,
+      "relationship_to_library": "Related to synthetic anchors without duplicating them.",
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://example.org/recommended-1"
+      },
+      "selection_kind": "recommended",
+      "selection_rank": 1,
+      "date_evidence": {
+        "first_public_at": "2026-08-23",
+        "online_at": "2026-08-23",
+        "issue_at": "2026-09",
+        "preprint_at": null,
+        "accepted_at": null,
+        "version_published_at": "2026-08-23",
+        "selected_reason": "Synthetic publisher date for contract testing."
+      },
+      "zotero_relationship": {
+        "already_in_library": false,
+        "related_papers": [
+          {
+            "title": "Synthetic Library Anchor",
+            "relationship": "Synthetic extension relationship for contract testing."
+          }
+        ],
+        "relationship_summary": "Related to synthetic anchors without duplicating them."
+      },
+      "evidence": {
+        "primary_url": "https://example.org/recommended-1",
+        "additional_urls": [
+          "https://example.org/evidence-1"
+        ],
+        "evidence_depth": "abstract"
+      }
+    },
+    {
+      "title": "Synthetic Recommended Paper 2",
+      "authors": [
+        "Example Author 2",
+        "Test Collaborator"
+      ],
+      "doi": "10.1234/synthetic.2",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2026-08-22",
+      "venue": "Synthetic Optics Journal",
+      "publication_type": "journal",
+      "url": "https://example.org/recommended-2",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "Synthetic AI summary for recommended paper 2.",
+      "recommendation_reason": "Synthetic recommendation reason 2 matches the demo profile.",
+      "relevance_score": 0.93,
+      "novelty_score": 0.89,
+      "scientific_value_score": 0.88,
+      "recency_score": 0.86,
+      "overall_score": 0.89,
+      "relationship_to_library": "Related to synthetic anchors without duplicating them.",
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://example.org/recommended-2"
+      },
+      "selection_kind": "recommended",
+      "selection_rank": 2,
+      "date_evidence": {
+        "first_public_at": "2026-08-22",
+        "online_at": "2026-08-22",
+        "issue_at": "2026-09",
+        "preprint_at": null,
+        "accepted_at": null,
+        "version_published_at": "2026-08-22",
+        "selected_reason": "Synthetic publisher date for contract testing."
+      },
+      "zotero_relationship": {
+        "already_in_library": false,
+        "related_papers": [
+          {
+            "title": "Synthetic Library Anchor",
+            "relationship": "Synthetic extension relationship for contract testing."
+          }
+        ],
+        "relationship_summary": "Related to synthetic anchors without duplicating them."
+      },
+      "evidence": {
+        "primary_url": "https://example.org/recommended-2",
+        "additional_urls": [
+          "https://example.org/evidence-2"
+        ],
+        "evidence_depth": "full_text"
+      }
+    },
+    {
+      "title": "Synthetic Recommended Paper 3",
+      "authors": [
+        "Example Author 3",
+        "Test Collaborator"
+      ],
+      "doi": "10.1234/synthetic.3",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2026-08-21",
+      "venue": "Synthetic Optics Journal",
+      "publication_type": "journal",
+      "url": "https://example.org/recommended-3",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "Synthetic AI summary for recommended paper 3.",
+      "recommendation_reason": "Synthetic recommendation reason 3 matches the demo profile.",
+      "relevance_score": 0.91,
+      "novelty_score": 0.88,
+      "scientific_value_score": 0.87,
+      "recency_score": 0.84,
+      "overall_score": 0.87,
+      "relationship_to_library": "Related to synthetic anchors without duplicating them.",
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://example.org/recommended-3"
+      },
+      "selection_kind": "recommended",
+      "selection_rank": 3,
+      "date_evidence": {
+        "first_public_at": "2026-08-21",
+        "online_at": "2026-08-21",
+        "issue_at": "2026-09",
+        "preprint_at": null,
+        "accepted_at": null,
+        "version_published_at": "2026-08-21",
+        "selected_reason": "Synthetic publisher date for contract testing."
+      },
+      "zotero_relationship": {
+        "already_in_library": false,
+        "related_papers": [
+          {
+            "title": "Synthetic Library Anchor",
+            "relationship": "Synthetic extension relationship for contract testing."
+          }
+        ],
+        "relationship_summary": "Related to synthetic anchors without duplicating them."
+      },
+      "evidence": {
+        "primary_url": "https://example.org/recommended-3",
+        "additional_urls": [
+          "https://example.org/evidence-3"
+        ],
+        "evidence_depth": "abstract"
+      }
+    },
+    {
+      "title": "Synthetic Recommended Paper 4",
+      "authors": [
+        "Example Author 4",
+        "Test Collaborator"
+      ],
+      "doi": "10.1234/synthetic.4",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2026-08-20",
+      "venue": "Synthetic Optics Journal",
+      "publication_type": "journal",
+      "url": "https://example.org/recommended-4",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "Synthetic AI summary for recommended paper 4.",
+      "recommendation_reason": "Synthetic recommendation reason 4 matches the demo profile.",
+      "relevance_score": 0.89,
+      "novelty_score": 0.87,
+      "scientific_value_score": 0.86,
+      "recency_score": 0.82,
+      "overall_score": 0.85,
+      "relationship_to_library": "Related to synthetic anchors without duplicating them.",
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://example.org/recommended-4"
+      },
+      "selection_kind": "recommended",
+      "selection_rank": 4,
+      "date_evidence": {
+        "first_public_at": "2026-08-20",
+        "online_at": "2026-08-20",
+        "issue_at": "2026-09",
+        "preprint_at": null,
+        "accepted_at": null,
+        "version_published_at": "2026-08-20",
+        "selected_reason": "Synthetic publisher date for contract testing."
+      },
+      "zotero_relationship": {
+        "already_in_library": false,
+        "related_papers": [
+          {
+            "title": "Synthetic Library Anchor",
+            "relationship": "Synthetic extension relationship for contract testing."
+          }
+        ],
+        "relationship_summary": "Related to synthetic anchors without duplicating them."
+      },
+      "evidence": {
+        "primary_url": "https://example.org/recommended-4",
+        "additional_urls": [
+          "https://example.org/evidence-4"
+        ],
+        "evidence_depth": "abstract"
+      }
+    },
+    {
+      "title": "Synthetic Recommended Paper 5",
+      "authors": [
+        "Example Author 5",
+        "Test Collaborator"
+      ],
+      "doi": "10.1234/synthetic.5",
+      "arxiv_id": null,
+      "openalex_id": null,
+      "published_at": "2026-08-19",
+      "venue": "Synthetic Optics Journal",
+      "publication_type": "journal",
+      "url": "https://example.org/recommended-5",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "Synthetic AI summary for recommended paper 5.",
+      "recommendation_reason": "Synthetic recommendation reason 5 matches the demo profile.",
+      "relevance_score": 0.87,
+      "novelty_score": 0.86,
+      "scientific_value_score": 0.85,
+      "recency_score": 0.8,
+      "overall_score": 0.83,
+      "relationship_to_library": "Related to synthetic anchors without duplicating them.",
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://example.org/recommended-5"
+      },
+      "selection_kind": "recommended",
+      "selection_rank": 5,
+      "date_evidence": {
+        "first_public_at": "2026-08-19",
+        "online_at": "2026-08-19",
+        "issue_at": "2026-09",
+        "preprint_at": null,
+        "accepted_at": null,
+        "version_published_at": "2026-08-19",
+        "selected_reason": "Synthetic publisher date for contract testing."
+      },
+      "zotero_relationship": {
+        "already_in_library": false,
+        "related_papers": [
+          {
+            "title": "Synthetic Library Anchor",
+            "relationship": "Synthetic extension relationship for contract testing."
+          }
+        ],
+        "relationship_summary": "Related to synthetic anchors without duplicating them."
+      },
+      "evidence": {
+        "primary_url": "https://example.org/recommended-5",
+        "additional_urls": [
+          "https://example.org/evidence-5"
+        ],
+        "evidence_depth": "abstract"
+      }
+    },
+    {
+      "title": "Synthetic Verified Alternative 1",
+      "authors": [],
+      "doi": null,
+      "arxiv_id": "2608.10001",
+      "openalex_id": null,
+      "published_at": "2026-08-24",
+      "venue": "arXiv",
+      "publication_type": "preprint",
+      "url": "https://arxiv.org/abs/2608.10001",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "",
+      "recommendation_reason": "Synthetic near-tie: verified and relevant, but lower evidence depth than the selected set.",
+      "relevance_score": 0.85,
+      "novelty_score": 0.85,
+      "scientific_value_score": 0.84,
+      "recency_score": 0.78,
+      "overall_score": 0.81,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://arxiv.org/abs/2608.10001"
+      },
+      "selection_kind": "verified_not_selected",
+      "selection_rank": 1,
+      "date_evidence": {
+        "first_public_at": "2026-08-24",
+        "online_at": null,
+        "issue_at": null,
+        "preprint_at": "2026-08-24",
+        "accepted_at": null,
+        "version_published_at": "2026-08-24",
+        "selected_reason": "Synthetic arXiv v1 date for contract testing."
+      },
+      "zotero_relationship": {},
+      "evidence": {
+        "primary_url": "https://arxiv.org/abs/2608.10001",
+        "additional_urls": [],
+        "evidence_depth": null
+      }
+    },
+    {
+      "title": "Synthetic Verified Alternative 2",
+      "authors": [],
+      "doi": null,
+      "arxiv_id": "2608.10002",
+      "openalex_id": null,
+      "published_at": "2026-08-23",
+      "venue": "arXiv",
+      "publication_type": "preprint",
+      "url": "https://arxiv.org/abs/2608.10002",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "",
+      "recommendation_reason": "Synthetic alternative reason 2: useful but outside the Top 5.",
+      "relevance_score": 0.83,
+      "novelty_score": 0.84,
+      "scientific_value_score": 0.83,
+      "recency_score": 0.76,
+      "overall_score": 0.79,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://arxiv.org/abs/2608.10002"
+      },
+      "selection_kind": "verified_not_selected",
+      "selection_rank": 2,
+      "date_evidence": {
+        "first_public_at": "2026-08-23",
+        "online_at": null,
+        "issue_at": null,
+        "preprint_at": "2026-08-23",
+        "accepted_at": null,
+        "version_published_at": "2026-08-23",
+        "selected_reason": "Synthetic arXiv v1 date for contract testing."
+      },
+      "zotero_relationship": {},
+      "evidence": {
+        "primary_url": "https://arxiv.org/abs/2608.10002",
+        "additional_urls": [],
+        "evidence_depth": null
+      }
+    },
+    {
+      "title": "Synthetic Verified Alternative 3",
+      "authors": [],
+      "doi": null,
+      "arxiv_id": "2608.10003",
+      "openalex_id": null,
+      "published_at": "2026-08-22",
+      "venue": "arXiv",
+      "publication_type": "preprint",
+      "url": "https://arxiv.org/abs/2608.10003",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "",
+      "recommendation_reason": "Synthetic alternative reason 3: useful but outside the Top 5.",
+      "relevance_score": 0.81,
+      "novelty_score": 0.83,
+      "scientific_value_score": 0.82,
+      "recency_score": 0.74,
+      "overall_score": 0.77,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://arxiv.org/abs/2608.10003"
+      },
+      "selection_kind": "verified_not_selected",
+      "selection_rank": 3,
+      "date_evidence": {
+        "first_public_at": "2026-08-22",
+        "online_at": null,
+        "issue_at": null,
+        "preprint_at": "2026-08-22",
+        "accepted_at": null,
+        "version_published_at": "2026-08-22",
+        "selected_reason": "Synthetic arXiv v1 date for contract testing."
+      },
+      "zotero_relationship": {},
+      "evidence": {
+        "primary_url": "https://arxiv.org/abs/2608.10003",
+        "additional_urls": [],
+        "evidence_depth": null
+      }
+    },
+    {
+      "title": "Synthetic Verified Alternative 4",
+      "authors": [],
+      "doi": null,
+      "arxiv_id": "2608.10004",
+      "openalex_id": null,
+      "published_at": "2026-08-21",
+      "venue": "arXiv",
+      "publication_type": "preprint",
+      "url": "https://arxiv.org/abs/2608.10004",
+      "pdf_url": null,
+      "abstract": null,
+      "topics": [],
+      "matched_topics": [],
+      "ai_summary": "",
+      "recommendation_reason": "Synthetic alternative reason 4: useful but outside the Top 5.",
+      "relevance_score": 0.79,
+      "novelty_score": 0.82,
+      "scientific_value_score": 0.81,
+      "recency_score": 0.72,
+      "overall_score": 0.75,
+      "relationship_to_library": null,
+      "source": {
+        "provider": "literature_radar",
+        "source_id": "https://arxiv.org/abs/2608.10004"
+      },
+      "selection_kind": "verified_not_selected",
+      "selection_rank": 4,
+      "date_evidence": {
+        "first_public_at": "2026-08-21",
+        "online_at": null,
+        "issue_at": null,
+        "preprint_at": "2026-08-21",
+        "accepted_at": null,
+        "version_published_at": "2026-08-21",
+        "selected_reason": "Synthetic arXiv v1 date for contract testing."
+      },
+      "zotero_relationship": {},
+      "evidence": {
+        "primary_url": "https://arxiv.org/abs/2608.10004",
+        "additional_urls": [],
+        "evidence_depth": null
+      }
+    }
+  ],
+  "run_kind": "literature_radar",
+  "ingest_identity": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "profile": {
+    "key": "demo",
+    "name": "Demo Literature Radar",
+    "path": "research_profiles/demo.json"
+  },
+  "search_window": {
+    "from": "2026-06-30",
+    "to": "2026-08-29",
+    "lookback_days": 60
+  },
+  "candidate_count": 30,
+  "verified_candidate_count": 9,
+  "recommended_count": 5,
+  "warnings": [
+    "Synthetic source degradation warning.",
+    "Synthetic bounded retry warning."
+  ],
+  "source_status": [
+    {
+      "name": "openalex",
+      "status": "success",
+      "attempts": 2,
+      "routes": [
+        {
+          "route": "works_search",
+          "status": "success"
+        }
+      ],
+      "result_count": 20,
+      "warning": null
+    },
+    {
+      "name": "arxiv",
+      "status": "degraded",
+      "attempts": 2,
+      "routes": [
+        {
+          "route": "atom",
+          "status": "degraded"
+        }
+      ],
+      "result_count": 4,
+      "warning": "Synthetic TLS fallback warning."
+    },
+    {
+      "name": "semantic_scholar",
+      "status": "degraded",
+      "attempts": 2,
+      "routes": [
+        {
+          "route": "graph_api",
+          "status": "failed",
+          "http_status": 429
+        }
+      ],
+      "result_count": 0,
+      "warning": "Synthetic bounded 429 warning."
+    },
+    {
+      "name": "publisher_web",
+      "status": "success",
+      "attempts": 5,
+      "routes": [
+        {
+          "route": "publisher_pages",
+          "status": "success"
+        }
+      ],
+      "result_count": 5,
+      "warning": null
+    },
+    {
+      "name": "crossref",
+      "status": "success",
+      "attempts": 5,
+      "routes": [
+        {
+          "route": "works_by_doi",
+          "status": "success"
+        }
+      ],
+      "result_count": 5,
+      "warning": null
+    }
+  ],
+  "zotero_context": {
+    "success": true,
+    "status": "success",
+    "backend": "cli",
+    "utf8": true,
+    "queries_used": [
+      "synthetic library query"
+    ],
+    "successful_queries": 1,
+    "failed_queries": 0,
+    "query_limit": 10,
+    "anchor_count": 3,
+    "related_collection_count": 1,
+    "summary": "Synthetic read-only Zotero context for contract testing.",
+    "warnings": []
+  },
+  "diagnostics": {
+    "sources_requested": [
+      "openalex",
+      "arxiv",
+      "semantic_scholar",
+      "publisher_web"
+    ],
+    "sources_used": [
+      "openalex",
+      "arxiv",
+      "publisher_web",
+      "crossref"
+    ],
+    "screening": {
+      "exclusion_counts": {
+        "already_in_zotero": 1,
+        "topic_or_exclusion_mismatch": 12
+      }
+    },
+    "stability": {
+      "synthetic_check": {
+        "status": "verified"
+      }
+    }
+  }
+}

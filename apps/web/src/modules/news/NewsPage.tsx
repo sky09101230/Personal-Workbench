@@ -2,8 +2,8 @@ import { AlertCircle, LoaderCircle, Newspaper, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getNewsJson, postNewsJson } from "./api";
 import { FeedCard } from "./components/FeedCard";
+import { RadarInbox } from "./components/RadarInbox";
 import type {
-  FeedItem,
   FeedItemType,
   FeedPage,
   RefreshResult,
@@ -31,35 +31,24 @@ export function NewsPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [feed, setFeed] = useState<FeedPage | null>(null);
   const [typeFilter, setTypeFilter] = useState<FeedItemType>("paper");
+  const [paperView, setPaperView] = useState<"feed" | "radar">("feed");
   const [topicFilter, setTopicFilter] = useState("");
   const [trendingPeriod, setTrendingPeriod] = useState<TrendingPeriod>("daily");
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
+  const isRadar = typeFilter === "paper" && paperView === "radar";
 
   const loadFeed = useCallback(async () => {
     const params = new URLSearchParams({ limit: String(pageSize), offset: String(offset) });
-    if (typeFilter) params.set("type", typeFilter);
+    params.set("type", typeFilter);
     if (typeFilter === "paper" && topicFilter) params.set("topic", topicFilter);
     if (typeFilter === "github_repo") params.set("period", trendingPeriod);
     setLoading(true);
     setError(false);
     try {
-      const providerFeedRequest = getNewsJson<FeedPage>(`/api/news/feed?${params}`);
-      if (typeFilter === "paper" && !topicFilter) {
-        const researchParams = new URLSearchParams({
-          limit: String(pageSize),
-          offset: String(offset),
-        });
-        const [providerFeed, researchFeed] = await Promise.all([
-          providerFeedRequest,
-          getNewsJson<FeedPage>(`/api/news/papers/research?${researchParams}`),
-        ]);
-        setFeed(mergePaperFeeds(providerFeed, researchFeed));
-      } else {
-        setFeed(await providerFeedRequest);
-      }
+      setFeed(await getNewsJson<FeedPage>(`/api/news/feed?${params}`));
     } catch {
       setError(true);
     } finally {
@@ -70,12 +59,12 @@ export function NewsPage() {
   useEffect(() => {
     void getNewsJson<TopicList>("/api/news/topics")
       .then((result) => setTopics(result.items))
-      .catch(() => setError(true));
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    void loadFeed();
-  }, [loadFeed]);
+    if (!isRadar) void loadFeed();
+  }, [isRadar, loadFeed]);
 
   const topicNames = useMemo(
     () => Object.fromEntries(topics.map((topic) => [topic.id, topic.name])),
@@ -104,6 +93,11 @@ export function NewsPage() {
     setOffset(0);
   };
 
+  const selectPaperView = (value: "feed" | "radar") => {
+    setPaperView(value);
+    setOffset(0);
+  };
+
   const selectTopic = (value: string) => {
     setTopicFilter(value);
     setOffset(0);
@@ -119,7 +113,7 @@ export function NewsPage() {
       <header className="news-header">
         <div>
           <h1>News</h1>
-          <p>Discover, filter, and browse external research signals.</p>
+          <p>Discover, filter, and review external research signals.</p>
         </div>
       </header>
 
@@ -140,6 +134,26 @@ export function NewsPage() {
         </div>
         <div className="news-control-actions">
           {typeFilter === "paper" ? (
+            <div className="paper-view-switch" role="group" aria-label="Papers view">
+              <button
+                className={paperView === "feed" ? "active" : ""}
+                type="button"
+                aria-pressed={paperView === "feed"}
+                onClick={() => selectPaperView("feed")}
+              >
+                Feed
+              </button>
+              <button
+                className={paperView === "radar" ? "active" : ""}
+                type="button"
+                aria-pressed={paperView === "radar"}
+                onClick={() => selectPaperView("radar")}
+              >
+                Radar
+              </button>
+            </div>
+          ) : null}
+          {typeFilter === "paper" && paperView === "feed" ? (
             <label className="topic-filter">
               <span>Topic</span>
               <select value={topicFilter} onChange={(event) => selectTopic(event.target.value)}>
@@ -162,15 +176,19 @@ export function NewsPage() {
               ))}
             </div>
           ) : null}
-          <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
-            <RefreshCw className={refreshing ? "spin" : ""} size={15} />
-            {refreshing ? "Refreshing" : activeTab.refreshLabel}
-          </button>
+          {!isRadar ? (
+            <button className="news-refresh" type="button" onClick={() => void refresh()} disabled={refreshing}>
+              <RefreshCw className={refreshing ? "spin" : ""} size={15} />
+              {refreshing ? "Refreshing" : activeTab.refreshLabel}
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <div className="news-feed-scroll">
-        {loading ? (
+      <div className={`news-feed-scroll${isRadar ? " radar-scroll" : ""}`}>
+        {isRadar ? (
+          <RadarInbox />
+        ) : loading ? (
           <NewsState icon={<LoaderCircle className="spin" size={22} />} title="Loading News" message="Reading the local News cache." />
         ) : error ? (
           <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached. Try again after restarting the changed services." />
@@ -179,7 +197,7 @@ export function NewsPage() {
             icon={<Newspaper size={22} />}
             title="No feed items"
             message={typeFilter === "paper"
-              ? "Refresh this tab or choose a different Topic."
+              ? "Refresh this Feed or choose a different Topic."
               : "Refresh this tab to load the latest available items."}
           />
         ) : (
@@ -189,7 +207,7 @@ export function NewsPage() {
         )}
       </div>
 
-      {feed && feed.total > pageSize ? (
+      {!isRadar && feed && feed.total > pageSize ? (
         <footer className="news-pagination">
           <button type="button" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>Previous</button>
           <span>{offset + 1}–{Math.min(offset + pageSize, feed.total)} of {feed.total}</span>
@@ -208,36 +226,4 @@ function NewsState({ icon, title, message }: { icon: React.ReactNode; title: str
       <p>{message}</p>
     </div>
   );
-}
-
-function mergePaperFeeds(providerFeed: FeedPage, researchFeed: FeedPage): FeedPage {
-  const items = new Map<string, FeedItem>();
-  for (const item of [...researchFeed.items, ...providerFeed.items]) {
-    const identity = paperIdentity(item);
-    if (!items.has(identity)) items.set(identity, item);
-  }
-  return {
-    items: [...items.values()].sort((left, right) => {
-      const leftDate = left.published_at ?? left.fetched_at ?? "";
-      const rightDate = right.published_at ?? right.fetched_at ?? "";
-      return rightDate.localeCompare(leftDate) || left.id.localeCompare(right.id);
-    }),
-    total: providerFeed.total + researchFeed.total,
-    limit: providerFeed.limit,
-    offset: providerFeed.offset,
-  };
-}
-
-function paperIdentity(item: FeedItem): string {
-  const doi = typeof item.metadata.doi === "string"
-    ? item.metadata.doi
-      .trim()
-      .toLowerCase()
-      .replace(/^https?:\/\/(?:dx\.)?doi\.org\//, "")
-      .replace(/^doi:\s*/, "")
-    : null;
-  if (doi) return `doi:${doi}`;
-  if (typeof item.metadata.arxiv_id === "string") return `arxiv:${item.metadata.arxiv_id.toLowerCase()}`;
-  if (typeof item.metadata.openalex_id === "string") return `openalex:${item.metadata.openalex_id.toUpperCase()}`;
-  return item.id;
 }

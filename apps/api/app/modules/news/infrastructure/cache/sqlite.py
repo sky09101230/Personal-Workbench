@@ -7,13 +7,20 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.modules.news.application.errors import PaperResearchIdentityConflictError
-from app.modules.news.application.research import canonical_title_year
+from app.modules.news.application.research import (
+    canonical_title,
+    canonical_title_year,
+    research_payload_digest,
+)
 from app.modules.news.domain.models import FeedItem, FeedItemType, FeedPage, Topic
 from app.modules.news.domain.research_models import (
     PaperResearchFeedPage,
     PaperResearchIngest,
     PaperResearchIngestResult,
     PaperResearchPaperInput,
+    PaperResearchRadarItem,
+    PaperResearchRadarRun,
+    PaperResearchReviewResult,
 )
 
 
@@ -22,7 +29,7 @@ class SchemaVersion:
     version: int
 
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 _SCHEMA_STATEMENTS = (
     """
     CREATE TABLE IF NOT EXISTS news_feed_items (
@@ -79,9 +86,11 @@ _SCHEMA_STATEMENTS = (
         doi TEXT,
         arxiv_id TEXT,
         openalex_id TEXT,
+        canonical_title TEXT,
         canonical_title_year TEXT NOT NULL UNIQUE,
         published_at TEXT,
         venue TEXT,
+        publication_type TEXT,
         url TEXT,
         pdf_url TEXT,
         abstract TEXT,
@@ -104,6 +113,18 @@ _SCHEMA_STATEMENTS = (
         query_plan_json TEXT NOT NULL,
         papers_found INTEGER NOT NULL,
         papers_accepted INTEGER NOT NULL,
+        run_kind TEXT NOT NULL DEFAULT 'paper_research',
+        ingest_identity TEXT,
+        payload_digest TEXT,
+        profile_json TEXT NOT NULL DEFAULT '{}',
+        search_window_json TEXT NOT NULL DEFAULT '{}',
+        candidate_count INTEGER,
+        verified_candidate_count INTEGER,
+        recommended_count INTEGER,
+        warnings_json TEXT NOT NULL DEFAULT '[]',
+        source_status_json TEXT NOT NULL DEFAULT '[]',
+        zotero_context_json TEXT NOT NULL DEFAULT '{}',
+        diagnostics_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL,
         UNIQUE (task_key, run_key)
     )
@@ -117,10 +138,19 @@ _SCHEMA_STATEMENTS = (
         recommendation_reason TEXT NOT NULL,
         relevance_score REAL CHECK (relevance_score IS NULL OR relevance_score BETWEEN 0 AND 1),
         novelty_score REAL CHECK (novelty_score IS NULL OR novelty_score BETWEEN 0 AND 1),
+        scientific_value_score REAL CHECK (scientific_value_score IS NULL OR scientific_value_score BETWEEN 0 AND 1),
+        recency_score REAL CHECK (recency_score IS NULL OR recency_score BETWEEN 0 AND 1),
+        overall_score REAL CHECK (overall_score IS NULL OR overall_score BETWEEN 0 AND 1),
         topics_json TEXT NOT NULL DEFAULT '[]',
         matched_topics_json TEXT NOT NULL DEFAULT '[]',
         relationship_to_library TEXT,
         source_json TEXT NOT NULL DEFAULT '{}',
+        selection_kind TEXT NOT NULL DEFAULT 'recommended',
+        selection_rank INTEGER,
+        date_evidence_json TEXT NOT NULL DEFAULT '{}',
+        zotero_relationship_json TEXT NOT NULL DEFAULT '{}',
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        review_status TEXT NOT NULL DEFAULT 'new',
         created_at TEXT NOT NULL,
         UNIQUE (run_id, paper_id)
     )
@@ -130,6 +160,16 @@ _SCHEMA_STATEMENTS = (
     "CREATE UNIQUE INDEX IF NOT EXISTS news_papers_openalex_unique ON news_papers(openalex_id) WHERE openalex_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS news_research_runs_generated_idx ON news_paper_research_runs(generated_at DESC)",
     "CREATE INDEX IF NOT EXISTS news_recommendations_paper_idx ON news_paper_research_recommendations(paper_id, created_at DESC)",
+)
+
+_V4_INDEX_STATEMENTS = (
+    "CREATE INDEX IF NOT EXISTS news_papers_canonical_title_idx ON news_papers(canonical_title)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS news_research_runs_ingest_identity_unique "
+    "ON news_paper_research_runs(ingest_identity) WHERE ingest_identity IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS news_research_runs_kind_generated_idx "
+    "ON news_paper_research_runs(run_kind, generated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS news_recommendations_selection_idx "
+    "ON news_paper_research_recommendations(run_id, selection_kind, selection_rank)",
 )
 
 
@@ -162,6 +202,9 @@ class SQLiteNewsRepository:
                 if applied is None:
                     for statement in _SCHEMA_STATEMENTS:
                         connection.execute(statement)
+                    _ensure_schema_v4(connection)
+                    for statement in _V4_INDEX_STATEMENTS:
+                        connection.execute(statement)
                     connection.execute(
                         "INSERT INTO news_schema_migrations (version) VALUES (?)",
                         (_SCHEMA_VERSION,),
@@ -187,6 +230,7 @@ class SQLiteNewsRepository:
     ) -> PaperResearchIngestResult:
         self.ensure_schema()
         ingested_at = _utc_now()
+        payload_digest = research_payload_digest(payload)
         created_paper_ids: set[str] = set()
         updated_paper_ids: set[str] = set()
         created_recommendation_ids: set[str] = set()
@@ -197,37 +241,104 @@ class SQLiteNewsRepository:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("BEGIN IMMEDIATE")
             try:
-                run_row = connection.execute(
-                    """
-                    SELECT id
-                    FROM news_paper_research_runs
-                    WHERE task_key = ? AND run_key = ?
-                    """,
-                    (payload.task_key, payload.run_key),
-                ).fetchone()
+                run_row = None
+                if payload.ingest_identity is not None:
+                    run_row = connection.execute(
+                        """
+                        SELECT id, task_key, run_key, ingest_identity, payload_digest,
+                               papers_accepted
+                        FROM news_paper_research_runs
+                        WHERE ingest_identity = ?
+                        """,
+                        (payload.ingest_identity,),
+                    ).fetchone()
+                if run_row is None:
+                    run_row = connection.execute(
+                        """
+                        SELECT id, task_key, run_key, ingest_identity, payload_digest,
+                               papers_accepted
+                        FROM news_paper_research_runs
+                        WHERE task_key = ? AND run_key = ?
+                        """,
+                        (payload.task_key, payload.run_key),
+                    ).fetchone()
+
                 created_run = run_row is None
+                if run_row is not None and payload.ingest_identity is not None:
+                    existing_identity = str(run_row[3]) if run_row[3] is not None else None
+                    existing_digest = str(run_row[4]) if run_row[4] is not None else None
+                    if (
+                        str(run_row[1]) != payload.task_key
+                        or str(run_row[2]) != payload.run_key
+                        or (
+                            existing_identity is not None
+                            and existing_identity != payload.ingest_identity
+                        )
+                    ):
+                        raise PaperResearchIdentityConflictError(
+                            "Radar ingest identity conflicts with an existing run"
+                        )
+                    if existing_digest is not None and existing_digest != payload_digest:
+                        raise PaperResearchIdentityConflictError(
+                            "Radar ingest identity was reused with different content"
+                        )
+                    if existing_digest == payload_digest:
+                        connection.commit()
+                        return PaperResearchIngestResult(
+                            run_id=str(run_row[0]),
+                            created_run=False,
+                            created_papers=0,
+                            updated_papers=0,
+                            created_recommendations=0,
+                            updated_recommendations=0,
+                            papers_found=len(payload.papers),
+                            papers_accepted=int(run_row[5]),
+                        )
+
                 run_id = str(run_row[0]) if run_row else f"research-run:{uuid4()}"
+                run_values = (
+                    payload.schema_version,
+                    payload.generated_at,
+                    ingested_at,
+                    payload.agent.type,
+                    payload.agent.model,
+                    payload.agent.prompt_version,
+                    _json(payload.query_plan),
+                    len(payload.papers),
+                    payload.run_kind,
+                    payload.ingest_identity,
+                    payload_digest if payload.ingest_identity is not None else None,
+                    _json(payload.profile),
+                    _json(payload.search_window),
+                    payload.candidate_count,
+                    payload.verified_candidate_count,
+                    payload.recommended_count,
+                    _json(payload.warnings),
+                    _json(payload.source_status),
+                    _json(payload.zotero_context),
+                    _json(payload.diagnostics),
+                )
                 if created_run:
                     connection.execute(
                         """
                         INSERT INTO news_paper_research_runs (
                             id, task_key, run_key, schema_version, status, generated_at,
                             ingested_at, agent_type, agent_model, prompt_version,
-                            query_plan_json, papers_found, papers_accepted, created_at
-                        ) VALUES (?, ?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                            query_plan_json, papers_found, papers_accepted, run_kind,
+                            ingest_identity, payload_digest, profile_json, search_window_json,
+                            candidate_count, verified_candidate_count, recommended_count,
+                            warnings_json, source_status_json, zotero_context_json,
+                            diagnostics_json, created_at
+                        ) VALUES (
+                            ?, ?, ?, ?, 'succeeded', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?,
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                        )
                         """,
                         (
                             run_id,
                             payload.task_key,
                             payload.run_key,
-                            payload.schema_version,
-                            payload.generated_at,
-                            ingested_at,
-                            payload.agent.type,
-                            payload.agent.model,
-                            payload.agent.prompt_version,
-                            _json(payload.query_plan),
-                            len(payload.papers),
+                            *run_values,
                             ingested_at,
                         ),
                     )
@@ -237,20 +348,15 @@ class SQLiteNewsRepository:
                         UPDATE news_paper_research_runs
                         SET schema_version = ?, status = 'succeeded', generated_at = ?,
                             ingested_at = ?, agent_type = ?, agent_model = ?,
-                            prompt_version = ?, query_plan_json = ?, papers_found = ?
+                            prompt_version = ?, query_plan_json = ?, papers_found = ?,
+                            run_kind = ?, ingest_identity = ?, payload_digest = ?,
+                            profile_json = ?, search_window_json = ?, candidate_count = ?,
+                            verified_candidate_count = ?, recommended_count = ?,
+                            warnings_json = ?, source_status_json = ?, zotero_context_json = ?,
+                            diagnostics_json = ?
                         WHERE id = ?
                         """,
-                        (
-                            payload.schema_version,
-                            payload.generated_at,
-                            ingested_at,
-                            payload.agent.type,
-                            payload.agent.model,
-                            payload.agent.prompt_version,
-                            _json(payload.query_plan),
-                            len(payload.papers),
-                            run_id,
-                        ),
+                        (*run_values, run_id),
                     )
 
                 for paper in payload.papers:
@@ -273,29 +379,45 @@ class SQLiteNewsRepository:
                         """,
                         (run_id, paper_id),
                     ).fetchone()
+                    recommendation_values = (
+                        paper.ai_summary,
+                        paper.recommendation_reason,
+                        paper.relevance_score,
+                        paper.novelty_score,
+                        paper.scientific_value_score,
+                        paper.recency_score,
+                        paper.overall_score,
+                        _json(paper.topics),
+                        _json(paper.matched_topics),
+                        paper.relationship_to_library,
+                        _json(paper.source),
+                        paper.selection_kind,
+                        paper.selection_rank,
+                        _json(paper.date_evidence),
+                        _json(paper.zotero_relationship),
+                        _json(paper.evidence),
+                    )
                     if recommendation_row is None:
                         recommendation_id = f"research-recommendation:{uuid4()}"
                         connection.execute(
                             """
                             INSERT INTO news_paper_research_recommendations (
                                 id, run_id, paper_id, ai_summary, recommendation_reason,
-                                relevance_score, novelty_score, topics_json,
-                                matched_topics_json, relationship_to_library,
-                                source_json, created_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                relevance_score, novelty_score, scientific_value_score,
+                                recency_score, overall_score, topics_json,
+                                matched_topics_json, relationship_to_library, source_json,
+                                selection_kind, selection_rank, date_evidence_json,
+                                zotero_relationship_json, evidence_json, review_status, created_at
+                            ) VALUES (
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                'new', ?
+                            )
                             """,
                             (
                                 recommendation_id,
                                 run_id,
                                 paper_id,
-                                paper.ai_summary,
-                                paper.recommendation_reason,
-                                paper.relevance_score,
-                                paper.novelty_score,
-                                _json(paper.topics),
-                                _json(paper.matched_topics),
-                                paper.relationship_to_library,
-                                _json(paper.source),
+                                *recommendation_values,
                                 ingested_at,
                             ),
                         )
@@ -306,22 +428,15 @@ class SQLiteNewsRepository:
                             """
                             UPDATE news_paper_research_recommendations
                             SET ai_summary = ?, recommendation_reason = ?,
-                                relevance_score = ?, novelty_score = ?, topics_json = ?,
-                                matched_topics_json = ?, relationship_to_library = ?,
-                                source_json = ?
+                                relevance_score = ?, novelty_score = ?,
+                                scientific_value_score = ?, recency_score = ?,
+                                overall_score = ?, topics_json = ?, matched_topics_json = ?,
+                                relationship_to_library = ?, source_json = ?,
+                                selection_kind = ?, selection_rank = ?, date_evidence_json = ?,
+                                zotero_relationship_json = ?, evidence_json = ?
                             WHERE id = ?
                             """,
-                            (
-                                paper.ai_summary,
-                                paper.recommendation_reason,
-                                paper.relevance_score,
-                                paper.novelty_score,
-                                _json(paper.topics),
-                                _json(paper.matched_topics),
-                                paper.relationship_to_library,
-                                _json(paper.source),
-                                recommendation_id,
-                            ),
+                            (*recommendation_values, recommendation_id),
                         )
                         updated_recommendation_ids.add(recommendation_id)
 
@@ -405,6 +520,112 @@ class SQLiteNewsRepository:
             total=int(total),
             limit=limit,
             offset=offset,
+        )
+
+    def latest_literature_radar(self) -> PaperResearchRadarRun | None:
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            run_row = connection.execute(
+                """
+                SELECT id, task_key, run_key, generated_at, ingested_at,
+                       profile_json, search_window_json, candidate_count,
+                       verified_candidate_count, recommended_count, warnings_json,
+                       source_status_json, zotero_context_json, diagnostics_json,
+                       papers_found, papers_accepted
+                FROM news_paper_research_runs
+                WHERE run_kind = 'literature_radar'
+                ORDER BY generated_at DESC, ingested_at DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            if run_row is None:
+                return None
+            item_rows = connection.execute(
+                """
+                SELECT
+                    recommendation.id, paper.id, recommendation.selection_kind,
+                    recommendation.selection_rank, paper.title, paper.authors_json,
+                    paper.doi, paper.arxiv_id, paper.published_at, paper.venue,
+                    paper.publication_type, paper.url, recommendation.ai_summary,
+                    recommendation.recommendation_reason,
+                    recommendation.relevance_score, recommendation.novelty_score,
+                    recommendation.scientific_value_score,
+                    recommendation.recency_score, recommendation.overall_score,
+                    recommendation.relationship_to_library,
+                    recommendation.zotero_relationship_json,
+                    recommendation.date_evidence_json, recommendation.evidence_json,
+                    recommendation.source_json, recommendation.review_status
+                FROM news_paper_research_recommendations AS recommendation
+                JOIN news_papers AS paper ON paper.id = recommendation.paper_id
+                WHERE recommendation.run_id = ?
+                ORDER BY
+                    CASE recommendation.selection_kind
+                        WHEN 'recommended' THEN 0 ELSE 1
+                    END,
+                    COALESCE(recommendation.selection_rank, 999999),
+                    COALESCE(recommendation.overall_score, -1) DESC,
+                    paper.title
+                """,
+                (str(run_row[0]),),
+            ).fetchall()
+
+        items = tuple(_radar_item(row) for row in item_rows)
+        recommendations = tuple(
+            item for item in items if item.selection_kind == "recommended"
+        )
+        alternatives = tuple(
+            item for item in items if item.selection_kind == "verified_not_selected"
+        )
+        return PaperResearchRadarRun(
+            id=str(run_row[0]),
+            task_key=str(run_row[1]),
+            run_key=str(run_row[2]),
+            generated_at=str(run_row[3]),
+            ingested_at=str(run_row[4]),
+            profile=dict(json.loads(str(run_row[5]))),
+            search_window=dict(json.loads(str(run_row[6]))),
+            candidate_count=(
+                int(run_row[7]) if run_row[7] is not None else int(run_row[14])
+            ),
+            verified_candidate_count=(
+                int(run_row[8]) if run_row[8] is not None else int(run_row[15])
+            ),
+            recommended_count=(
+                int(run_row[9]) if run_row[9] is not None else len(recommendations)
+            ),
+            warnings=tuple(json.loads(str(run_row[10]))),
+            source_status=tuple(
+                dict(item) for item in json.loads(str(run_row[11]))
+            ),
+            zotero_context=dict(json.loads(str(run_row[12]))),
+            diagnostics=dict(json.loads(str(run_row[13]))),
+            recommendations=recommendations,
+            verified_alternatives=alternatives,
+        )
+
+    def update_paper_research_review(
+        self,
+        recommendation_id: str,
+        review_status: str,
+    ) -> PaperResearchReviewResult | None:
+        if review_status not in {"new", "seen", "interested", "dismissed"}:
+            raise ValueError("invalid paper research review status")
+        self.ensure_schema()
+        with sqlite3.connect(self._database_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE news_paper_research_recommendations
+                SET review_status = ?
+                WHERE id = ?
+                """,
+                (review_status, recommendation_id),
+            )
+            connection.commit()
+        if cursor.rowcount == 0:
+            return None
+        return PaperResearchReviewResult(
+            recommendation_id=recommendation_id,
+            review_status=review_status,
         )
 
     def topics_match(self, topics: Iterable[Topic]) -> bool:
@@ -698,22 +919,23 @@ def _upsert_research_paper(
     paper: PaperResearchPaperInput,
     updated_at: str,
 ) -> tuple[str, bool]:
+    title_key = canonical_title(paper.title)
     fallback_key = canonical_title_year(paper.title, paper.published_at)
     matches: set[str] = set()
     for column, value in (
         ("doi", paper.doi),
         ("arxiv_id", paper.arxiv_id),
+        ("canonical_title", title_key),
         ("openalex_id", paper.openalex_id),
         ("canonical_title_year", fallback_key),
     ):
         if value is None:
             continue
-        row = connection.execute(
+        rows = connection.execute(
             f"SELECT id FROM news_papers WHERE {column} = ?",
             (value,),
-        ).fetchone()
-        if row is not None:
-            matches.add(str(row[0]))
+        ).fetchall()
+        matches.update(str(row[0]) for row in rows)
     if len(matches) > 1:
         raise PaperResearchIdentityConflictError(
             "Paper identifiers resolve to multiple existing papers"
@@ -725,9 +947,9 @@ def _upsert_research_paper(
             """
             INSERT INTO news_papers (
                 id, title, authors_json, doi, arxiv_id, openalex_id,
-                canonical_title_year, published_at, venue, url, pdf_url,
-                abstract, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                canonical_title, canonical_title_year, published_at, venue,
+                publication_type, url, pdf_url, abstract, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paper_id,
@@ -736,9 +958,11 @@ def _upsert_research_paper(
                 paper.doi,
                 paper.arxiv_id,
                 paper.openalex_id,
+                title_key,
                 fallback_key,
                 paper.published_at,
                 paper.venue,
+                paper.publication_type,
                 paper.url,
                 paper.pdf_url,
                 paper.abstract,
@@ -754,8 +978,11 @@ def _upsert_research_paper(
         (paper_id,),
     ).fetchone()
     assert existing is not None
+    preferred_doi = _preferred_doi(
+        str(existing[0]) if existing[0] is not None else None,
+        paper.doi,
+    )
     for label, old_value, new_value in (
-        ("DOI", existing[0], paper.doi),
         ("arXiv id", existing[1], paper.arxiv_id),
         ("OpenAlex id", existing[2], paper.openalex_id),
     ):
@@ -768,12 +995,14 @@ def _upsert_research_paper(
         UPDATE news_papers
         SET title = ?,
             authors_json = CASE WHEN ? = '[]' THEN authors_json ELSE ? END,
-            doi = COALESCE(?, doi),
+            doi = ?,
             arxiv_id = COALESCE(?, arxiv_id),
             openalex_id = COALESCE(?, openalex_id),
+            canonical_title = ?,
             canonical_title_year = ?,
             published_at = COALESCE(?, published_at),
             venue = COALESCE(?, venue),
+            publication_type = COALESCE(?, publication_type),
             url = COALESCE(?, url),
             pdf_url = COALESCE(?, pdf_url),
             abstract = COALESCE(?, abstract),
@@ -784,12 +1013,14 @@ def _upsert_research_paper(
             paper.title,
             _json(paper.authors),
             _json(paper.authors),
-            paper.doi,
+            preferred_doi,
             paper.arxiv_id,
             paper.openalex_id,
+            title_key,
             fallback_key,
             paper.published_at,
             paper.venue,
+            paper.publication_type,
             paper.url,
             paper.pdf_url,
             paper.abstract,
@@ -798,6 +1029,64 @@ def _upsert_research_paper(
         ),
     )
     return paper_id, False
+
+
+def _preferred_doi(existing: str | None, incoming: str | None) -> str | None:
+    if existing is None:
+        return incoming
+    if incoming is None or incoming == existing:
+        return existing
+    existing_is_arxiv = existing.casefold().startswith("10.48550/arxiv.")
+    incoming_is_arxiv = incoming.casefold().startswith("10.48550/arxiv.")
+    if existing_is_arxiv and not incoming_is_arxiv:
+        return incoming
+    if incoming_is_arxiv and not existing_is_arxiv:
+        return existing
+    raise PaperResearchIdentityConflictError(
+        "Incoming DOI conflicts with the existing paper"
+    )
+
+
+def _radar_item(row: tuple[object, ...]) -> PaperResearchRadarItem:
+    evidence = dict(json.loads(str(row[22])))
+    doi = str(row[6]) if row[6] is not None else None
+    arxiv_id = str(row[7]) if row[7] is not None else None
+    url = (
+        str(row[11])
+        if row[11] is not None
+        else str(evidence.get("primary_url"))
+        if evidence.get("primary_url")
+        else f"https://doi.org/{doi}"
+        if doi
+        else f"https://arxiv.org/abs/{arxiv_id}"
+    )
+    return PaperResearchRadarItem(
+        recommendation_id=str(row[0]),
+        paper_id=str(row[1]),
+        selection_kind=str(row[2]),
+        selection_rank=int(row[3]) if row[3] is not None else None,
+        title=str(row[4]),
+        authors=tuple(json.loads(str(row[5]))),
+        doi=doi,
+        arxiv_id=arxiv_id,
+        published_at=str(row[8]) if row[8] is not None else None,
+        venue=str(row[9]) if row[9] is not None else None,
+        publication_type=str(row[10]) if row[10] is not None else None,
+        url=url,
+        ai_summary=str(row[12]),
+        recommendation_reason=str(row[13]),
+        relevance_score=float(row[14]) if row[14] is not None else None,
+        novelty_score=float(row[15]) if row[15] is not None else None,
+        scientific_value_score=float(row[16]) if row[16] is not None else None,
+        recency_score=float(row[17]) if row[17] is not None else None,
+        overall_score=float(row[18]) if row[18] is not None else None,
+        relationship_to_library=str(row[19]) if row[19] is not None else None,
+        zotero_relationship=dict(json.loads(str(row[20]))),
+        date_evidence=dict(json.loads(str(row[21]))),
+        evidence=evidence,
+        source=dict(json.loads(str(row[23]))),
+        review_status=str(row[24]),
+    )
 
 
 def _research_feed_item(row: tuple[object, ...]) -> FeedItem:
@@ -856,6 +1145,56 @@ def _research_feed_item(row: tuple[object, ...]) -> FeedItem:
                 "query_plan": list(json.loads(str(row[28]))),
             },
         },
+    )
+
+
+def _ensure_schema_v4(connection: sqlite3.Connection) -> None:
+    columns = {
+        "news_papers": (
+            "canonical_title TEXT",
+            "publication_type TEXT",
+        ),
+        "news_paper_research_runs": (
+            "run_kind TEXT NOT NULL DEFAULT 'paper_research'",
+            "ingest_identity TEXT",
+            "payload_digest TEXT",
+            "profile_json TEXT NOT NULL DEFAULT '{}'",
+            "search_window_json TEXT NOT NULL DEFAULT '{}'",
+            "candidate_count INTEGER",
+            "verified_candidate_count INTEGER",
+            "recommended_count INTEGER",
+            "warnings_json TEXT NOT NULL DEFAULT '[]'",
+            "source_status_json TEXT NOT NULL DEFAULT '[]'",
+            "zotero_context_json TEXT NOT NULL DEFAULT '{}'",
+            "diagnostics_json TEXT NOT NULL DEFAULT '{}'",
+        ),
+        "news_paper_research_recommendations": (
+            "scientific_value_score REAL",
+            "recency_score REAL",
+            "overall_score REAL",
+            "selection_kind TEXT NOT NULL DEFAULT 'recommended'",
+            "selection_rank INTEGER",
+            "date_evidence_json TEXT NOT NULL DEFAULT '{}'",
+            "zotero_relationship_json TEXT NOT NULL DEFAULT '{}'",
+            "evidence_json TEXT NOT NULL DEFAULT '{}'",
+            "review_status TEXT NOT NULL DEFAULT 'new'",
+        ),
+    }
+    for table, definitions in columns.items():
+        existing = {
+            str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        for definition in definitions:
+            name = definition.split(maxsplit=1)[0]
+            if name not in existing:
+                connection.execute(f"ALTER TABLE {table} ADD COLUMN {definition}")
+                existing.add(name)
+    rows = connection.execute(
+        "SELECT id, title FROM news_papers WHERE canonical_title IS NULL"
+    ).fetchall()
+    connection.executemany(
+        "UPDATE news_papers SET canonical_title = ? WHERE id = ?",
+        ((canonical_title(str(title)), str(paper_id)) for paper_id, title in rows),
     )
 
 
