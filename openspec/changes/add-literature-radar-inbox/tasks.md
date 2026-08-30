@@ -10,19 +10,20 @@
 
 ## 2. Radar UI
 
-- [ ] Add Papers Feed/Radar switch and Radar Inbox component.
-- [ ] Show run summary, source health, warnings, recommendations, alternatives, diagnostics, and review controls.
-- [ ] Verify production frontend build and browser behavior.
+- [x] Add Papers Feed/Radar switch and Radar Inbox component.
+- [x] Show run summary, source health, warnings, recommendations, alternatives, diagnostics, and review controls.
+- [x] Verify production frontend build and browser behavior.
 
 ## 3. Agent transport
 
 - [x] Add validator-gated Literature Radar mapper and manual ingest service.
 - [x] Add `workbench-agent literature ingest <result.json>` with config/.env transport.
-- [ ] Add CLI/client/mapping tests and documentation.
+- [x] Add CLI/client/mapping tests and documentation.
 
 ## 4. End-to-end acceptance
 
-- [ ] Run both complete regression suites and static checks.
-- [ ] Ingest the real V0.1 output twice through HTTP and confirm stable SQLite counts.
-- [ ] Restart/recreate backend and refresh browser to confirm persistence.
-- [ ] Commit and push both feature branches independently.
+- [x] Run both complete regression suites and static checks.
+- [x] Ingest the real V0.1 output twice through HTTP and confirm stable SQLite counts.
+- [x] Restart/recreate backend and refresh browser to confirm persistence.
+- [x] Commit and push both feature branches independently.
+
