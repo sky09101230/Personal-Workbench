@@ -133,6 +133,33 @@ def test_radar_new_run_reuses_paper_by_canonical_title(
     assert _counts(database_path) == (2, 9, 10)
 
 
+def test_radar_same_formal_doi_can_correct_stale_arxiv_id(
+    tmp_path,
+    override_service,
+) -> None:
+    first = _fixture()
+    first_paper = first["papers"][0]
+    first_paper["doi"] = "10.1000/arxiv-correction"
+    first_paper["arxiv_id"] = "2601.08197"
+    database_path = tmp_path / "arxiv-correction.db"
+    override_service("news_service", _service(database_path))
+    assert client.post("/api/news/papers/research/ingest", json=first).status_code == 200
+
+    second = copy.deepcopy(first)
+    second["run_key"] = "radar-demo-20260830t130000z-arxiv-correction"
+    second["ingest_identity"] = f"sha256:{'c' * 64}"
+    second["generated_at"] = "2026-08-30T13:00:00Z"
+    second["papers"][0]["arxiv_id"] = "2601.07574"
+
+    response = client.post("/api/news/papers/research/ingest", json=second)
+
+    assert response.status_code == 200
+    assert response.json()["created_run"] is True
+    latest = client.get("/api/news/papers/research/radar/latest").json()["run"]
+    assert latest["recommendations"][0]["doi"] == "10.1000/arxiv-correction"
+    assert latest["recommendations"][0]["arxiv_id"] == "2601.07574"
+
+
 def test_radar_review_status_persists_and_rejects_unknown_recommendation(
     tmp_path,
     override_service,

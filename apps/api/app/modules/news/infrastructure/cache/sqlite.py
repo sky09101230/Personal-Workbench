@@ -978,25 +978,31 @@ def _upsert_research_paper(
         (paper_id,),
     ).fetchone()
     assert existing is not None
-    preferred_doi = _preferred_doi(
-        str(existing[0]) if existing[0] is not None else None,
-        paper.doi,
+    existing_doi = str(existing[0]) if existing[0] is not None else None
+    existing_arxiv_id = str(existing[1]) if existing[1] is not None else None
+    preferred_doi = _preferred_doi(existing_doi, paper.doi)
+    preferred_arxiv_id = _preferred_arxiv_id(
+        existing_arxiv_id,
+        paper.arxiv_id,
+        existing_doi=existing_doi,
+        incoming_doi=paper.doi,
     )
-    for label, old_value, new_value in (
-        ("arXiv id", existing[1], paper.arxiv_id),
-        ("OpenAlex id", existing[2], paper.openalex_id),
+    existing_openalex_id = str(existing[2]) if existing[2] is not None else None
+    if (
+        existing_openalex_id is not None
+        and paper.openalex_id is not None
+        and existing_openalex_id != paper.openalex_id
     ):
-        if old_value is not None and new_value is not None and old_value != new_value:
-            raise PaperResearchIdentityConflictError(
-                f"Incoming {label} conflicts with the existing paper"
-            )
+        raise PaperResearchIdentityConflictError(
+            "Incoming OpenAlex id conflicts with the existing paper"
+        )
     connection.execute(
         """
         UPDATE news_papers
         SET title = ?,
             authors_json = CASE WHEN ? = '[]' THEN authors_json ELSE ? END,
             doi = ?,
-            arxiv_id = COALESCE(?, arxiv_id),
+            arxiv_id = ?,
             openalex_id = COALESCE(?, openalex_id),
             canonical_title = ?,
             canonical_title_year = ?,
@@ -1014,7 +1020,7 @@ def _upsert_research_paper(
             _json(paper.authors),
             _json(paper.authors),
             preferred_doi,
-            paper.arxiv_id,
+            preferred_arxiv_id,
             paper.openalex_id,
             title_key,
             fallback_key,
@@ -1029,6 +1035,30 @@ def _upsert_research_paper(
         ),
     )
     return paper_id, False
+
+
+def _preferred_arxiv_id(
+    existing: str | None,
+    incoming: str | None,
+    *,
+    existing_doi: str | None,
+    incoming_doi: str | None,
+) -> str | None:
+    if existing is None:
+        return incoming
+    if incoming is None or incoming == existing:
+        return existing
+    same_formal_doi = (
+        existing_doi is not None
+        and incoming_doi is not None
+        and existing_doi == incoming_doi
+        and not existing_doi.casefold().startswith("10.48550/arxiv.")
+    )
+    if same_formal_doi:
+        return incoming
+    raise PaperResearchIdentityConflictError(
+        "Incoming arXiv id conflicts with the existing paper"
+    )
 
 
 def _preferred_doi(existing: str | None, incoming: str | None) -> str | None:
