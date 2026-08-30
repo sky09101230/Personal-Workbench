@@ -45,3 +45,14 @@ The system SHALL provide a Feed/Radar switch inside Papers. Feed SHALL remain pr
 #### Scenario: User opens Radar
 - **WHEN** the Papers Radar view is selected
 - **THEN** no provider refresh or literature search is initiated and the persisted latest Radar run is rendered from the Workbench API
+
+### Requirement: Final source status is distinguished from route diagnostics
+The Radar Inbox SHALL display the source-level final status separately from route and environment diagnostics so a failed local CA route does not imply that verified arXiv evidence is untrustworthy.
+
+#### Scenario: certifi route succeeds after default CA diagnostic fails
+- **WHEN** an arXiv source record is `success` and includes a failed `default_ca_environment` diagnostic plus successful Atom and official-evidence routes
+- **THEN** the card displays `SUCCESS`, while the failed environment diagnostic is available only in expandable route details
+
+#### Scenario: optional source is degraded with fallback coverage
+- **WHEN** a source is `degraded` but the run has usable fallback evidence
+- **THEN** the card explains that evidence remains available and exposes the detailed warning/routes without labeling the recommended papers as unverified

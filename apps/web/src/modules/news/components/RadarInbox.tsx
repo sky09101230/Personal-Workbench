@@ -15,6 +15,7 @@ import type {
   RadarReviewResponse,
   RadarReviewStatus,
   RadarRun,
+  RadarSourceStatus,
 } from "../types";
 
 const reviewOptions: { label: string; value: RadarReviewStatus }[] = [
@@ -131,14 +132,7 @@ export function RadarInbox() {
 
         <div className="radar-source-grid">
           {run.source_status.map((source) => (
-            <article className={`radar-source radar-source-${source.status}`} key={source.name}>
-              <div>
-                <strong>{source.name}</strong>
-                <span>{source.status.replace("_", " ")}</span>
-              </div>
-              <small>{source.result_count} results · {source.attempts} attempts</small>
-              {source.warning ? <p>{source.warning}</p> : null}
-            </article>
+            <SourceStatusCard source={source} key={source.name} />
           ))}
         </div>
 
@@ -319,6 +313,67 @@ function RadarPaperCard({
     </article>
   );
 }
+
+function SourceStatusCard({ source }: { source: RadarSourceStatus }) {
+  const note = sourceStatusNote(source);
+  return (
+    <article className={`radar-source radar-source-${source.status}`}>
+      <div className="radar-source-heading">
+        <strong>{source.name}</strong>
+        <span>{source.status.replace("_", " ")}</span>
+      </div>
+      <small>{source.result_count} results · {source.attempts} attempts</small>
+      {note ? <p className="radar-source-note">{note}</p> : null}
+      {source.routes.length > 0 || source.warning ? (
+        <details className="radar-source-details">
+          <summary>Route and environment details</summary>
+          {source.warning ? <p>{source.warning}</p> : null}
+          {source.routes.length > 0 ? (
+            <ul>
+              {source.routes.map((route, index) => (
+                <li key={`${recordText(route, "route") ?? "route"}-${index}`}>
+                  <strong>{recordText(route, "route") ?? `route ${index + 1}`}</strong>
+                  <span>{recordText(route, "status") ?? "diagnostic"}</span>
+                  {safeRouteDetail(route) ? <small>{safeRouteDetail(route)}</small> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </details>
+      ) : null}
+    </article>
+  );
+}
+
+
+function sourceStatusNote(source: RadarSourceStatus): string | null {
+  if (source.status === "degraded" && source.result_count > 0) {
+    return "Usable evidence is available; one or more access routes were limited.";
+  }
+  if (source.status === "degraded") {
+    return "This source was limited; other sources supplied the usable evidence.";
+  }
+  if (source.status === "failed") return "No usable evidence was obtained from this source.";
+  if (source.status === "not_attempted") return "This source was not attempted for this run.";
+  return null;
+}
+
+
+function safeRouteDetail(route: Record<string, unknown>): string {
+  return Object.entries(route)
+    .filter(([key]) => !["route", "status"].includes(key))
+    .filter(([key]) => !/(?:api[_-]?key|token|authorization|headers?)/i.test(key))
+    .map(([key, value]) => `${key.replaceAll("_", " ")}: ${formatDiagnosticValue(value)}`)
+    .join(" · ");
+}
+
+
+function formatDiagnosticValue(value: unknown): string {
+  if (value === null) return "none";
+  if (["string", "number", "boolean"].includes(typeof value)) return String(value);
+  return JSON.stringify(value);
+}
+
 
 function RunCount({ label, value, emphasis = false }: { label: string; value: number; emphasis?: boolean }) {
   return (

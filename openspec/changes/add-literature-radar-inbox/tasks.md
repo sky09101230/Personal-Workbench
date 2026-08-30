@@ -26,3 +26,10 @@
 - [x] Ingest the real V0.1 output twice through HTTP and confirm stable SQLite counts.
 - [x] Restart/recreate backend and refresh browser to confirm persistence.
 - [x] Commit and push both feature branches independently.
+
+## 5. Source health follow-up
+
+- [x] Display final source status separately from route/environment diagnostics.
+- [x] Move raw source warnings and route attempts into expandable details.
+- [x] Use neutral degraded messaging that distinguishes source access limits from paper trust.
+- [x] Filter secret-like route fields in the frontend and verify the production build.

@@ -40,3 +40,7 @@ News schema v4 creates the current table definitions for new databases and condi
 - **Identity spoofing:** unique ingest identity alone is insufficient, so Workbench also compares a server-computed normalized payload digest on replay.
 - **Provider feed regression:** the legacy schema v1 endpoint and Feed query remain covered by existing tests; Radar has a separate query/component.
 - **Sensitive local context:** Agent maps only an allowlist of Zotero context fields and omits the V0.1 executable path.
+
+### Separate final source status from route/environment diagnostics
+
+The source card presents the final `success` / `degraded` / `failed` / `not_attempted` outcome and a neutral availability note. Route attempts, default-CA environment checks, Retry-After decisions, authentication mode, and source warning text are shown only in an expandable detail block. The UI filters header/key/token/authorization-like route fields defensively. A failed default CA diagnostic may therefore coexist with source-level arXiv success when the certifi Atom and official evidence routes succeeded.

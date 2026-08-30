@@ -89,11 +89,19 @@
 .radar-count-emphasis strong { color: var(--accent); }
 .radar-source-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 8px; margin-top: 14px; }
 .radar-source { min-width: 0; border: 1px solid #e0e6e5; border-radius: 6px; background: rgba(255, 255, 255, .72); padding: 10px; }
-.radar-source > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.radar-source-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .radar-source strong { overflow: hidden; color: var(--text-secondary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .radar-source span { border-radius: 999px; padding: 2px 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
 .radar-source small { display: block; margin-top: 5px; color: var(--text-tertiary); font-size: 9px; }
-.radar-source p { margin: 7px 0 0; color: #866a32; font-size: 9px; line-height: 1.45; }
+.radar-source-note { margin: 7px 0 0; color: var(--text-tertiary); font-size: 9px; line-height: 1.45; }
+.radar-source-details { margin-top: 8px; border-top: 1px solid #e6ecea; padding-top: 7px; }
+.radar-source-details summary { color: var(--text-tertiary); cursor: pointer; font-size: 9px; font-weight: 650; }
+.radar-source-details > p { margin: 7px 0 0; color: #866a32; font-size: 9px; line-height: 1.45; }
+.radar-source-details ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.radar-source-details li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; border-radius: 4px; background: #f7f9f8; padding: 6px; }
+.radar-source-details li > strong { font-size: 9px; text-transform: none; }
+.radar-source-details li > span { color: var(--text-tertiary); font-size: 8px; font-weight: 700; text-transform: uppercase; }
+.radar-source-details li > small { grid-column: 1 / -1; margin: 0; color: var(--text-tertiary); font-size: 8px; line-height: 1.4; white-space: normal; }
 .radar-source-success span { background: #eaf5ee; color: #387a52; }
 .radar-source-degraded span { background: #fff4dc; color: #9a6b19; }
 .radar-source-failed span { background: #fae8e6; color: #a44f48; }
