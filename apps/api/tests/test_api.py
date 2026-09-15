@@ -3,6 +3,8 @@ import sqlite3
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.tasks import TaskSnapshot
+from app.core.task_repository import SQLiteTaskRepository
 from app.modules.literature.application.errors import ProviderNotConfiguredError
 from app.modules.literature.application.service import LiteratureService
 from app.modules.literature.domain.models import (
@@ -26,6 +28,21 @@ def test_health() -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "service": "workbench-api"}
+
+
+def test_health_propagates_request_id() -> None:
+    response = client.get("/api/health", headers={"X-Request-ID": "audit-1"})
+    assert response.headers["x-request-id"] == "audit-1"
+
+
+def test_task_status_endpoint_reads_persisted_task(tmp_path, override_service) -> None:
+    repository = SQLiteTaskRepository(f"sqlite:///{(tmp_path / 'tasks.db').as_posix()}")
+    override_service("task_repository", repository)
+    snapshot = TaskSnapshot.new("api-task", "demo")
+    repository.save(snapshot)
+    response = client.get("/api/tasks/api-task")
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
 
 
 def test_literature_status_keeps_provider_behind_workbench_api() -> None:

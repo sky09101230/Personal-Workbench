@@ -8,6 +8,8 @@ import httpx
 from app.core.config import Settings
 from app.modules.todo.application.errors import (
     TodoPlannerError,
+    TodoPlannerRateLimitedError,
+    TodoPlannerTimeoutError,
     TodoPlannerUnavailableError,
 )
 from app.modules.todo.domain.models import (
@@ -63,9 +65,14 @@ class DeepSeekTodoPlanner:
                     "response_format": {"type": "json_object"},
                 },
             )
+        except httpx.TimeoutException as error:
+            logger.warning("DeepSeek planner timed out: %s", error)
+            raise TodoPlannerTimeoutError("DeepSeek planner request timed out") from error
         except httpx.HTTPError as error:
             logger.warning("DeepSeek planner request failed: %s", error)
             raise TodoPlannerError("DeepSeek planner request failed") from error
+        if response.status_code == 429:
+            raise TodoPlannerRateLimitedError("DeepSeek planner rate limit reached")
         if response.is_error:
             logger.warning(
                 "DeepSeek planner returned HTTP %s", response.status_code

@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -26,6 +27,7 @@ from app.modules.literature.application.ai.schemas import (
     result_object,
 )
 from app.modules.literature.application.errors import (
+    LiteratureAIError,
     LiteratureAIInvalidResponseError,
     LiteratureAIResourceNotFoundError,
 )
@@ -85,7 +87,7 @@ class LiteratureAIService:
             paper_id,
             deep=analysis_type == "deep_read",
         )
-        generated = self.provider.generate(prompt, context)
+        generated = self._generate_with_retry(prompt, context)
         try:
             result = (
                 parse_deep_read(generated.content)
@@ -146,7 +148,7 @@ class LiteratureAIService:
             question=question,
             messages=existing,
         )
-        generated = self.provider.generate(ASK_PAPER, context)
+        generated = self._generate_with_retry(ASK_PAPER, context)
         try:
             result = parse_ask_paper(generated.content)
         except ValueError as error:
@@ -198,7 +200,7 @@ class LiteratureAIService:
             context_after=context_after,
             question=question,
         )
-        generated = self.provider.generate(prompt, context)
+        generated = self._generate_with_retry(prompt, context)
         try:
             result = parse_selection(generated.content, action)
         except ValueError as error:
@@ -216,6 +218,16 @@ class LiteratureAIService:
         )
         self.repository.save_analysis(analysis)
         return analysis
+
+    def _generate_with_retry(self, prompt, context):
+        for attempt in range(3):
+            try:
+                return self.provider.generate(prompt, context)
+            except LiteratureAIError as error:
+                if not getattr(error, "retryable", False) or attempt >= 2:
+                    raise
+                time.sleep(0.25 * (2**attempt))
+        raise RuntimeError("AI retry loop exhausted")
 
     def list_user_notes(self, paper_id: str) -> tuple[LiteratureUserNote, ...]:
         self.literature.get_paper(paper_id)

@@ -20,3 +20,11 @@ class TodoPlannerUnavailableError(TodoError):
 
 class TodoPlannerError(TodoError):
     code = "todo_planner_failed"
+
+
+class TodoPlannerTimeoutError(TodoPlannerUnavailableError):
+    retryable = True
+
+
+class TodoPlannerRateLimitedError(TodoPlannerUnavailableError):
+    retryable = True

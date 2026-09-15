@@ -13,6 +13,7 @@ from app.modules.literature.application.errors import (
     ProviderAuthenticationError,
     ProviderNotConfiguredError,
     ProviderUnavailableError,
+    ProviderTimeoutError,
 )
 from app.modules.literature.domain.models import (
     Attachment,
@@ -335,6 +336,9 @@ class ZoteroWebProvider:
                 params=params,
                 headers=self._headers(),
             )
+        except httpx.TimeoutException as error:
+            logger.warning("Zotero request timed out: %s", error)
+            raise ProviderTimeoutError("Zotero request timed out") from error
         except httpx.RequestError as error:
             logger.warning("Zotero request failed: %s", error)
             raise ProviderUnavailableError("Zotero could not be reached") from error
@@ -367,6 +371,9 @@ class ZoteroWebProvider:
         try:
             request = self._client.build_request("GET", url, headers=headers)
             return self._client.send(request, stream=True, follow_redirects=False)
+        except httpx.TimeoutException as error:
+            logger.warning("Zotero attachment request timed out: %s", error)
+            raise ProviderTimeoutError("Zotero attachment request timed out") from error
         except httpx.RequestError as error:
             logger.warning("Zotero attachment request failed: %s", error)
             raise ProviderUnavailableError("Zotero attachment could not be reached") from error

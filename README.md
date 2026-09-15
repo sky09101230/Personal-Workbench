@@ -148,6 +148,21 @@ npm.cmd --prefix apps\web run build
 git diff --check
 ```
 
+### Framework maintenance
+
+耗时刷新可通过异步入口创建任务，并用 `GET /api/tasks/{task_id}` 查询状态：
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/news/refresh/async
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/literature/sync/async
+```
+
+可使用维护命令创建经过完整性校验的 SQLite 备份；目标文件必须不存在：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.core.maintenance backup --destination data\backups\workbench.db
+```
+
 后端测试覆盖 Literature cache/sync/PDF 边界，以及 News service、独立 schema、Topic 匹配、筛选和 API。前端当前没有测试 runner；production build 只验证类型和打包，不等同于浏览器交互测试。
 
 ## 安全边界

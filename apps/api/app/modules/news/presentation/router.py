@@ -2,7 +2,10 @@ from dataclasses import asdict
 from datetime import date, timezone
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from uuid import uuid4
+from datetime import datetime, timezone
+from app.core.tasks import TaskSnapshot, TaskStatus
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -380,6 +383,30 @@ def refresh(
             status_code=502,
             detail={"code": error.code, "message": str(error)},
         ) from error
+
+
+@router.post("/refresh/async", status_code=202)
+def refresh_async(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    item_type: Annotated[FeedItemType | None, Query(alias="type")] = None,
+    service: NewsService = Depends(get_news_service),
+) -> dict[str, object]:
+    task = TaskSnapshot.new(str(uuid4()), "news.refresh")
+    repository = request.app.state.task_repository
+    repository.save(task)
+
+    def run() -> None:
+        running = TaskSnapshot(task.id, task.operation, TaskStatus.RUNNING, task.created_at, datetime.now(timezone.utc))
+        repository.save(running)
+        try:
+            result = service.refresh(item_type=item_type)
+            repository.save(TaskSnapshot(task.id, task.operation, TaskStatus.SUCCEEDED, task.created_at, datetime.now(timezone.utc), result_ref=str(result)))
+        except Exception as error:  # noqa: BLE001 - task boundary records failure
+            repository.save(TaskSnapshot(task.id, task.operation, TaskStatus.FAILED, task.created_at, datetime.now(timezone.utc), error_code=type(error).__name__))
+
+    background_tasks.add_task(run)
+    return {"task_id": task.id, "status": task.status.value}
 
 
 def _research_payload(payload: PaperResearchIngestRequest) -> PaperResearchIngest:

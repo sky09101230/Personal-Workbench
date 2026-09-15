@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.modules.news.application.errors import NewsSourceError
+from app.modules.news.application.errors import NewsProviderRateLimited, NewsProviderTimeout, NewsSourceError
 from app.modules.news.domain.models import FeedItem, FeedItemType, Topic
 
 
@@ -57,11 +57,14 @@ class GitHubTrendingProvider:
             )
         except httpx.TimeoutException as error:
             logger.warning("GitHub Trending %s request timed out: %s", period, error)
-            raise NewsSourceError(f"GitHub Trending {period} request timed out") from error
+            raise NewsProviderTimeout(f"GitHub Trending {period} request timed out") from error
         except httpx.HTTPError as error:
             logger.warning("GitHub Trending is unavailable: %s", error)
             raise NewsSourceError("GitHub Trending is unavailable") from error
 
+        if response.status_code == 429:
+            logger.warning("GitHub Trending rate limited (period=%s)", period)
+            raise NewsProviderRateLimited("GitHub Trending rate limit exceeded")
         if response.is_error:
             logger.warning(
                 "GitHub Trending is unavailable (HTTP %s, period=%s)",

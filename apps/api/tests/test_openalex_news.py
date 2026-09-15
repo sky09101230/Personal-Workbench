@@ -346,13 +346,9 @@ def test_openalex_failure_does_not_consume_current_slot(tmp_path) -> None:
         clock=lambda: datetime(2026, 8, 25, 5, 0, tzinfo=timezone.utc),
     )
 
-    with pytest.raises(NewsSourceError):
-        service.refresh()
-    assert repository.get_source_refresh_slot("openalex") is None
-
     result = service.refresh()
 
-    assert request_count == 2
+    assert request_count == 2  # first 429 is retried once
     assert result.fetched == 1
     assert repository.get_source_refresh_slot("openalex") == "2026-08-25-PM"
 

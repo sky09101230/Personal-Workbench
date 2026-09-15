@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import Settings
-from app.modules.news.application.errors import NewsSourceError
+from app.modules.news.application.errors import NewsProviderRateLimited, NewsProviderTimeout, NewsSourceError
 from app.modules.news.domain.models import FeedItem, FeedItemType, Topic
 
 
@@ -74,7 +74,7 @@ class OpenAlexPaperProvider:
             response = self._client.get(f"{API_BASE_URL}/works", params=params)
         except httpx.TimeoutException as error:
             logger.warning("OpenAlex request timed out: %s", error)
-            raise NewsSourceError("OpenAlex request timed out") from error
+            raise NewsProviderTimeout("OpenAlex request timed out") from error
         except httpx.HTTPError as error:
             logger.warning("OpenAlex is unavailable: %s", error)
             raise NewsSourceError("OpenAlex is unavailable") from error
@@ -84,7 +84,7 @@ class OpenAlexPaperProvider:
             raise NewsSourceError("OpenAlex authentication failed")
         if response.status_code == 429:
             logger.warning("OpenAlex rate limit exceeded")
-            raise NewsSourceError("OpenAlex rate limit exceeded")
+            raise NewsProviderRateLimited("OpenAlex rate limit exceeded")
         if response.is_error:
             logger.warning("OpenAlex is unavailable (HTTP %s)", response.status_code)
             raise NewsSourceError("OpenAlex is unavailable")

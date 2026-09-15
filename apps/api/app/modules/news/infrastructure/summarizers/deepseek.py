@@ -56,12 +56,16 @@ class DeepSeekNewsSummarizer:
                     },
                     json=self._request_body(batch),
                 )
+            except httpx.TimeoutException as error:
+                logger.warning("DeepSeek news summary timed out; continuing without summary: %s", error)
+                continue
             except httpx.HTTPError as error:
-                logger.warning("DeepSeek news summary request failed: %s", error)
+                logger.warning("DeepSeek news summary request failed; continuing without summary: %s", error)
                 continue
             if response.is_error:
                 logger.warning(
-                    "DeepSeek news summary returned HTTP %s", response.status_code
+                    "DeepSeek news summary returned HTTP %s; continuing without summary",
+                    response.status_code,
                 )
                 continue
             representative_summaries.update(

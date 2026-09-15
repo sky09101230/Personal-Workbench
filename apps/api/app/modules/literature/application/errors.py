@@ -14,6 +14,10 @@ class ProviderUnavailableError(LiteratureError):
     pass
 
 
+class ProviderTimeoutError(ProviderUnavailableError):
+    retryable = True
+
+
 class InvalidCollectionIdentifierError(LiteratureError):
     pass
 
@@ -35,11 +39,15 @@ class LiteratureAINotConfiguredError(LiteratureAIError):
 
 
 class LiteratureAIProviderError(LiteratureAIError):
-    pass
+    retryable = False
 
 
 class LiteratureAIRateLimitError(LiteratureAIProviderError):
-    pass
+    retryable = True
+
+
+class LiteratureAITimeoutError(LiteratureAIProviderError):
+    retryable = True
 
 
 class LiteratureAIInvalidResponseError(LiteratureAIProviderError):

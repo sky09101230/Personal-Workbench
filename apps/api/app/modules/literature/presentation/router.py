@@ -2,7 +2,9 @@ from dataclasses import asdict
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Request
+from uuid import uuid4
+from datetime import datetime, timezone
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
@@ -15,6 +17,7 @@ from app.modules.literature.application.errors import (
     ProviderNotConfiguredError,
 )
 from app.modules.literature.application.service import LiteratureService
+from app.core.tasks import TaskSnapshot, TaskStatus
 
 router = APIRouter()
 
@@ -35,6 +38,29 @@ def sync(service: LiteratureService = Depends(get_literature_service)) -> dict[s
         return {"status": "succeeded", **asdict(result)}
     except LiteratureError as error:
         raise _http_error(error) from error
+
+
+@router.post("/sync/async", status_code=202)
+def sync_async(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    service: LiteratureService = Depends(get_literature_service),
+) -> dict[str, object]:
+    task = TaskSnapshot.new(str(uuid4()), "literature.sync")
+    repository = request.app.state.task_repository
+    repository.save(task)
+
+    def run() -> None:
+        running = TaskSnapshot(task.id, task.operation, TaskStatus.RUNNING, task.created_at, datetime.now(timezone.utc))
+        repository.save(running)
+        try:
+            result = service.sync()
+            repository.save(TaskSnapshot(task.id, task.operation, TaskStatus.SUCCEEDED, task.created_at, datetime.now(timezone.utc), result_ref=str(result)))
+        except Exception as error:  # noqa: BLE001 - task boundary records failure
+            repository.save(TaskSnapshot(task.id, task.operation, TaskStatus.FAILED, task.created_at, datetime.now(timezone.utc), error_code=type(error).__name__))
+
+    background_tasks.add_task(run)
+    return {"task_id": task.id, "status": task.status.value}
 
 
 @router.get("/collections")

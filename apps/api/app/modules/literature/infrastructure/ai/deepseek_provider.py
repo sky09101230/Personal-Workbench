@@ -10,6 +10,7 @@ from app.modules.literature.application.errors import (
     LiteratureAINotConfiguredError,
     LiteratureAIProviderError,
     LiteratureAIRateLimitError,
+    LiteratureAITimeoutError,
 )
 from app.modules.literature.domain.ai_models import json_object
 
@@ -55,7 +56,7 @@ class DeepSeekLiteratureAIProvider:
             )
         except httpx.TimeoutException as error:
             logger.warning("DeepSeek Literature AI request timed out")
-            raise LiteratureAIProviderError("The AI provider timed out") from error
+            raise LiteratureAITimeoutError("The AI provider timed out") from error
         except httpx.HTTPError as error:
             logger.warning("DeepSeek Literature AI request failed")
             raise LiteratureAIProviderError("The AI provider could not be reached") from error

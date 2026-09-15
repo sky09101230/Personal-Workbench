@@ -1,7 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from uuid import uuid4
 
 from app.core.config import settings
+from app.core.observability import request_id_var
+from app.core.task_repository import SQLiteTaskRepository
+from app.core.task_router import router as task_router
+from app.core.events import InMemoryEventPublisher
 from app.modules.literature.application.ai.service import LiteratureAIService
 from app.modules.literature.application.service import LiteratureService
 from app.modules.literature.infrastructure.ai.deepseek_provider import (
@@ -35,6 +42,21 @@ from app.modules.todo.presentation.router import router as todo_router, todo_err
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Personal Workbench API", version="0.1.0")
+
+    class RequestIdMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request: Request, call_next):
+            request_id = request.headers.get("X-Request-ID") or str(uuid4())
+            token = request_id_var.set(request_id)
+            try:
+                response = await call_next(request)
+                response.headers["X-Request-ID"] = request_id
+                return response
+            finally:
+                request_id_var.reset(token)
+
+    app.add_middleware(RequestIdMiddleware)
+    app.state.task_repository = SQLiteTaskRepository(settings.database_url)
+    app.state.task_repository.mark_interrupted()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -56,12 +78,14 @@ def create_app() -> FastAPI:
         context=PaperContextBuilder(literature_service, literature_repository),
         repository=literature_repository,
     )
+    app.state.event_publisher = InMemoryEventPublisher()
     app.state.news_service = NewsService(
         providers=(OpenAlexPaperProvider(settings), GitHubTrendingProvider()),
         repository=SQLiteNewsRepository(settings.database_url),
         topics=DEFAULT_TOPICS,
         summarizer=DeepSeekNewsSummarizer(settings),
         slot_limited_sources=("openalex",),
+        event_publisher=app.state.event_publisher,
     )
     app.state.project_activity_service = ProjectActivityService(
         repository=SQLiteProjectActivityRepository(settings.database_url),
@@ -91,6 +115,7 @@ def create_app() -> FastAPI:
         tags=["project-activity"],
     )
     app.include_router(todo_router, prefix="/api/todo", tags=["todo"])
+    app.include_router(task_router, prefix="/api", tags=["tasks"])
     return app
 
 

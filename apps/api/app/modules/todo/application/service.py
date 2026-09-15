@@ -1,10 +1,12 @@
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import date, datetime, timezone
+import time as time_module
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from app.modules.todo.application.errors import (
+    TodoError,
     TodoNotFoundError,
     TodoPlannerUnavailableError,
     TodoValidationError,
@@ -277,7 +279,7 @@ class TodoService:
             planned_today_tasks=planned_today,
             next_actions=tuple(task for task in unfinished if task.is_next_action),
         )
-        result = self.planner.plan_day(context)
+        result = self._plan_with_retry(context)
         seen: set[str] = set()
         proposal_id = str(uuid4())
         items: list[PlanProposalItem] = []
@@ -314,6 +316,16 @@ class TodoService:
         if proposal is None:
             raise TodoNotFoundError("Plan proposal was not found")
         return proposal
+
+    def _plan_with_retry(self, context: PlannerContext):
+        for attempt in range(3):
+            try:
+                return self.planner.plan_day(context)
+            except TodoError as error:
+                if not getattr(error, "retryable", False) or attempt >= 2:
+                    raise
+                time_module.sleep(0.25 * (2**attempt))
+        raise RuntimeError("planner retry loop exhausted")
 
     def accept_proposal(self, proposal_id: str) -> PlanProposal:
         self.get_proposal(proposal_id)

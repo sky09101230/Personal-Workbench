@@ -1,9 +1,10 @@
 from collections import defaultdict
 from dataclasses import dataclass
 import re
+import time
 
 from app.modules.literature.application.ports import LiteratureCache, LiteratureProvider
-from app.modules.literature.application.errors import LiteratureResourceNotFoundError, PdfUnavailableError
+from app.modules.literature.application.errors import LiteratureError, LiteratureResourceNotFoundError, PdfUnavailableError
 from app.modules.literature.domain.models import (
     Attachment,
     Collection,
@@ -134,7 +135,7 @@ class LiteratureService:
         provider_name = self.provider.name
         provider_library_id = str(getattr(self.provider, "library_id", ""))
         try:
-            collections = self.provider.list_collections()
+            collections = self._retry_provider(self.provider.list_collections)
             papers_by_id: dict[str, Paper] = {}
             collection_papers: dict[str, set[str]] = defaultdict(set)
             library_version: str | None = None
@@ -156,7 +157,7 @@ class LiteratureService:
                     papers_by_id[paper.id] = paper
                     collection_papers[collection.id].add(paper.id)
 
-            assets = self.provider.list_assets()
+            assets = self._retry_provider(self.provider.list_assets)
             library_version = _latest_version(library_version, assets.library_version)
 
             library_id = self._library_id(collections, tuple(papers_by_id.values()))
@@ -194,7 +195,7 @@ class LiteratureService:
             return self.full_sync()
 
         try:
-            changes = self.provider.list_changes(since=since)
+            changes = self._retry_provider(lambda: self.provider.list_changes(since=since))
             self.cache.apply_changes(
                 provider=self.provider.name,
                 library_id=state.library_id,
@@ -229,12 +230,22 @@ class LiteratureService:
         offset = 0
         library_version: str | None = None
         while True:
-            page = self.provider.list_papers(collection_id=collection_id, limit=page_size, offset=offset)
+            page = self._retry_provider(lambda: self.provider.list_papers(collection_id=collection_id, limit=page_size, offset=offset))
             items.extend(page.items)
             library_version = page.library_version or library_version
             offset += len(page.items)
             if not page.items or offset >= page.total:
                 return tuple(items), library_version
+
+    def _retry_provider(self, operation):
+        for attempt in range(3):
+            try:
+                return operation()
+            except LiteratureError as error:
+                if not getattr(error, "retryable", False) or attempt >= 2:
+                    raise
+                time.sleep(0.25 * (2**attempt))
+        raise RuntimeError("provider retry loop exhausted")
 
     def _library_state(self) -> LibraryState | None:
         if self.cache is None:

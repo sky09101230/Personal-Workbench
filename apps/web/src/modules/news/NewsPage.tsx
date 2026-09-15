@@ -1,12 +1,12 @@
 import { AlertCircle, LoaderCircle, Newspaper, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getNewsJson, postNewsJson } from "./api";
+import { waitForTask } from "../../core/tasks";
 import { FeedCard } from "./components/FeedCard";
 import { RadarInbox } from "./components/RadarInbox";
 import type {
   FeedItemType,
   FeedPage,
-  RefreshResult,
   Topic,
   TopicList,
   TrendingPeriod,
@@ -31,7 +31,7 @@ export function NewsPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [feed, setFeed] = useState<FeedPage | null>(null);
   const [typeFilter, setTypeFilter] = useState<FeedItemType>("paper");
-  const [paperView, setPaperView] = useState<"feed" | "radar">("feed");
+  const [paperView, setPaperView] = useState<"feed" | "radar">("radar");
   const [topicFilter, setTopicFilter] = useState("");
   const [trendingPeriod, setTrendingPeriod] = useState<TrendingPeriod>("daily");
   const [offset, setOffset] = useState(0);
@@ -76,7 +76,9 @@ export function NewsPage() {
     setRefreshing(true);
     setError(false);
     try {
-      await postNewsJson<RefreshResult>(`/api/news/refresh?type=${typeFilter}`);
+      const queued = await postNewsJson<{ task_id: string }>(`/api/news/refresh/async?type=${typeFilter}`);
+      const completed = await waitForTask(queued.task_id, () => undefined);
+      if (completed.status !== "succeeded") throw new Error(completed.error_code ?? "refresh_failed");
       const result = await getNewsJson<TopicList>("/api/news/topics");
       setTopics(result.items);
       if (offset !== 0) setOffset(0);
@@ -191,7 +193,7 @@ export function NewsPage() {
         ) : loading ? (
           <NewsState icon={<LoaderCircle className="spin" size={22} />} title="Loading News" message="Reading the local News cache." />
         ) : error ? (
-          <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached. Try again after restarting the changed services." />
+          <NewsState icon={<AlertCircle size={22} />} title="News unavailable" message="The News API could not be reached." action={{ label: "Try again", onClick: () => void loadFeed() }} />
         ) : !feed || feed.items.length === 0 ? (
           <NewsState
             icon={<Newspaper size={22} />}
@@ -218,12 +220,13 @@ export function NewsPage() {
   );
 }
 
-function NewsState({ icon, title, message }: { icon: React.ReactNode; title: string; message: string }) {
+function NewsState({ icon, title, message, action }: { icon: React.ReactNode; title: string; message: string; action?: { label: string; onClick: () => void } }) {
   return (
     <div className="news-state">
       <span>{icon}</span>
       <h2>{title}</h2>
       <p>{message}</p>
+      {action ? <button type="button" onClick={action.onClick}>{action.label}</button> : null}
     </div>
   );
 }

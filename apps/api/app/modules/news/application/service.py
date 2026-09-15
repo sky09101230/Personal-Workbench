@@ -2,12 +2,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from threading import Lock
+import time
 from zoneinfo import ZoneInfo
 
 from app.modules.news.application.errors import InvalidFeedItemError, NewsError, NewsSourceError
 from app.modules.news.application.ports import NewsRepository, NewsSourcePort, NewsSummarizerPort
 from app.modules.news.domain.models import FeedItem, FeedItemType, FeedPage, RefreshResult, Topic
 from app.modules.news.application.research import normalize_research_ingest
+from app.core.events import DomainEvent, EventPublisher
 from app.modules.news.domain.research_models import (
     PaperResearchFeedPage,
     PaperResearchIngest,
@@ -29,6 +31,7 @@ class NewsService:
     slot_limited_sources: tuple[str, ...] = ()
     clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     refresh_lock: Lock = field(default_factory=Lock, compare=False, repr=False)
+    event_publisher: EventPublisher | None = field(default=None, compare=False, repr=False)
 
     def list_feed(
         self,
@@ -127,12 +130,16 @@ class NewsService:
         fetched = 0
         items_by_id: dict[str, FeedItem] = {}
         for provider in providers:
-            try:
-                provider_items = provider.fetch_items(topics=self.topics)
-            except NewsError:
-                raise
-            except Exception as error:
-                raise NewsSourceError(f"News source '{provider.name}' could not be refreshed") from error
+            for attempt in range(3):
+                try:
+                    provider_items = provider.fetch_items(topics=self.topics)
+                    break
+                except NewsError as error:
+                    if not getattr(error, "retryable", False) or attempt >= 2:
+                        raise
+                    time.sleep(0.25 * (2**attempt))
+                except Exception as error:
+                    raise NewsSourceError(f"News source '{provider.name}' could not be refreshed") from error
             for item in provider_items:
                 _validate_item(provider, item)
                 if item_type is not None and item.type is not item_type:
@@ -180,13 +187,18 @@ class NewsService:
             source_slots=source_slots,
             item_types=refreshed_types,
         )
-        return RefreshResult(
+        result = RefreshResult(
             providers=provider_names,
             fetched=fetched,
             stored=stored,
             topic_matches=sum(len(matches) for matches in item_topics.values()),
             refreshed_at=now.astimezone(timezone.utc).isoformat(),
         )
+        if self.event_publisher is not None:
+            self.event_publisher.publish(
+                DomainEvent.create("news.feed_refreshed", "news", {"stored": stored, "fetched": fetched})
+            )
+        return result
 
 
 def _half_day_slot(now: datetime) -> str:

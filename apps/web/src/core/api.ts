@@ -8,8 +8,24 @@ export class ApiError extends Error {
   }
 }
 
+export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+
+export type TaskSnapshot = {
+  id: string;
+  operation: string;
+  status: TaskStatus;
+  created_at: string;
+  updated_at: string;
+  error_code: string | null;
+  result_ref: string | null;
+};
+
 export async function getJson<T>(url: string): Promise<T> {
   return requestJson<T>(url, { method: "GET" });
+}
+
+export function getTask(taskId: string): Promise<TaskSnapshot> {
+  return getJson<TaskSnapshot>(`/api/tasks/${encodeURIComponent(taskId)}`);
 }
 
 export async function postJson<T>(url: string, body?: object): Promise<T> {
