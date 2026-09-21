@@ -73,3 +73,35 @@ Migration SHALL back up populated databases, be atomic and repeatable, preserve 
 #### Scenario: Failure and retry
 - **WHEN** migration fails mid-transaction
 - **THEN** it rolls back and a later retry can safely complete using the original data
+
+### Requirement: Explicit migration lifecycle and separate provenance categories
+Read requests SHALL NOT migrate legacy data. A pending library SHALL expose migration status and return a stable migration-required error; explicit dry-run SHALL leave the original database unchanged. External sources and ingestion origins SHALL be separate response fields. Existing user state SHALL survive one-time legacy saved-state reconciliation.
+
+#### Scenario: Existing canonical installation upgrades
+- **WHEN** the workflow backend opens a canonical v1 database
+- **THEN** workflow schema is upgraded idempotently without repeating identity migration or changing user reading state
+
+#### Scenario: Pending legacy library
+- **WHEN** a client reads a paper before explicit migration
+- **THEN** it receives migration_required and no legacy paper or AI row is rewritten
+
+### Requirement: Reviewable staged PDF batches
+PDF upload batches SHALL retain extracted evidence separately from editable candidates and SHALL enter Library only on explicit confirmation. Confirmation SHALL be atomic and idempotent per item; conflicts SHALL remain editable/retryable. Cancellation and cleanup MUST NOT delete confirmed originals or live staging references.
+
+#### Scenario: Partial confirmation failure
+- **WHEN** one item conflicts and another is valid
+- **THEN** the valid item is confirmed once and the conflicting item can be corrected and retried without reupload
+
+### Requirement: Auditable metadata proposal decisions
+Metadata proposals SHALL resolve aliases, validate allowed fields and identifiers, reject stale acceptance and preserve before/after evidence. Accept and edit-accept SHALL enforce the same identity conflict rules and atomically update identifier lookup.
+
+#### Scenario: Edited proposal tries to claim another paper DOI
+- **WHEN** an edit-accept requests an identifier owned by another canonical paper
+- **THEN** a conflict is returned and neither the metadata nor proposal status changes
+
+### Requirement: Selective Zotero import and bounded local materialization
+The backend SHALL support browsing and explicitly importing selected Zotero items with their source resources, independently of the global sync cursor. PDF materialization SHALL preserve scholarly identity, stream within a bounded size, prefer the main paper and return stable per-item outcomes.
+
+#### Scenario: Local supplementary PDF already exists
+- **WHEN** a user requests materialization for a paper that only has local supplementary material
+- **THEN** the remote primary PDF is still materialized and selected for reading

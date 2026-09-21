@@ -10,6 +10,16 @@ Use an additive canonical repository implementing existing Literature ports, ret
 
 ## Decisions
 
+### Stage 1/2 continuation supersedes automatic migration and immediate-only uploads
+
+Canonical data migration must now be explicit (API/CLI), with a read-only status probe and a 409 migration-required response until complete. DDL upgrades are independently versioned for already-canonical databases; a legacy data marker is not proof that workflow tables exist. Dry-run operates on a temporary copy before any source DDL or data mutation. Reconciliation is recorded once and only targets original migrated aliases still in inbox, excluding explicit user state edits.
+
+Application services use Protocol ports. SQLite workflow persistence stays in an infrastructure repository extending the canonical repository; extraction uses an injected infrastructure adapter. A confirmation is atomic per item, not per batch: durable candidate data and staging survive identity errors, finalized content is safe to reuse after a crash, and state+canonical+asset writes commit together. Cancel cannot undo confirmed items. Cleanup runs under the same repository write lock as staging registration/confirmation and excludes all live staging references. No originals are garbage-collected here.
+
+Metadata proposals capture a canonical snapshot and reject stale acceptance. Allowlisted metadata is normalized for create and edit-accept; accepted identifiers are checked against the global identifier index and update that index in the same transaction as provenance and resolution status. Arbitrary keys cannot alter paper IDs, deletion, reading state, file paths or ownership. Formal DOI replacement remains conflict-gated.
+
+Selective Zotero import fetches one provider-owned opaque item identifier through a public provider port, including its collections/notes/attachments, and does not advance the global sync cursor. Materialization selects a primary remote PDF, streams at most 50 MiB with unconditional close, records the source asset/version, and atomically adds/selects the local primary. Existing local supplementary PDFs do not count as primary. Batch size is bounded and returns per-paper outcomes without leaking exception details.
+
 ### Additive ownership and source snapshots
 
 New literature canonical tables store documents, aliases, references, origins, assets, source notes, native collections/memberships, source collections and evidence/conflicts. Keep legacy literature_papers/collections/notes/attachments/references untouched after migration as the initial source snapshot. A new SQLite canonical repository reuses proven AI persistence, replacing source-cache read/write paths in composition. This avoids destructive PK rewrites and keeps legacy schema v1–v3 replay testable. Canonical schema uses its own migration ledger. References use a unique provider/library/item tuple, independent from document ID, and active/detached state. Source metadata is retained even after detachment.

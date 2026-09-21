@@ -35,3 +35,18 @@
 - [x] 6.2 Back up real SQLite, dry-run then migrate, verify counts/content and rehearse rollback into a separate DB; record report. The application migrated during interruption; final CLI replay was a verified no-op.
 - [x] 6.3 Verify eight requested acceptance cases and real metadata/PDF/AI where available; distinguish fixtures from live external checks. See acceptance.md for the in-app file chooser limitation.
 - [x] 6.4 Final strict validation, staged review, logical commits and feature-branch push; report remote branch and V2.1 limitations.
+
+## 7. Stage 1 backend hardening (Gemini handoff)
+
+- [x] 7.1 Separate sources/origins and implement explicit, backup-protected migration with a real dry-run; test existing v1 and pending legacy databases.
+- [x] 7.2 Version workflow DDL upgrades and idempotent saved-state reconciliation without overwriting user state; test repeated/concurrent migration.
+- [x] 7.3 Harden staging/finalization/recovery/cleanup and legacy file fallback; test traversal, corruption, failed confirmation and referenced-file protection.
+
+## 8. Stage 2 workflows and API freeze
+
+- [x] 8.1 Complete typed repository/provider ports, composition and routes; verify application services contain no SQL/private infrastructure access.
+- [x] 8.2 Complete staged upload, metadata extraction, review/confirm/cancel and retry semantics; test idempotency and partial failures.
+- [x] 8.3 Complete metadata proposals with alias resolution, stale/concurrent acceptance checks, identifier uniqueness and evidence; test accept/reject/edit conflicts.
+- [x] 8.4 Complete selected Zotero import and bounded PDF materialization; test remote resource loading, local preference, size limits and cleanup.
+- [x] 8.5 Freeze A–G API contracts in docs/contracts/literature-v2-api.md; verify OpenAPI schemas and endpoint tests.
+- [ ] 8.6 Run full backend pytest, compileall, strict OpenSpec validation, diff/secret checks and existing-DB copy upgrade; commit/push claude/literature-v2-backend-workflows without UI changes or merges.
