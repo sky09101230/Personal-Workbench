@@ -52,6 +52,8 @@ def main():
     os.environ["DATABASE_URL"] = f"sqlite:///{target}"
     from app.modules.literature.infrastructure.cache.canonical import backup_database, SQLiteCanonicalRepository
     backup_database(str(source), str(target))
+    baseline_backup = workspace / "before-acceptance.db"
+    backup_database(str(source), str(baseline_backup))
     with closing(sqlite3.connect(source)) as c:
         tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'") if not r[0].startswith("literature_ai_") and r[0] != "literature_user_notes"]
         before = {name: table_digest(c, name) for name in tables}
@@ -72,7 +74,7 @@ def main():
     # file exercises rollback without overwriting subsequent user work.
     assert SQLiteCanonicalRepository(f"sqlite:///{target}").migration_report() == repository.migration_report()
     restored = workspace / "rollback-rehearsal.db"
-    backup_database(report["initial"]["backup"], str(restored))
+    backup_database(str(baseline_backup), str(restored))
     with closing(sqlite3.connect(restored)) as c:
         assert all(table_digest(c, name) == before[name] for name in tables)
     report["rollback_rehearsal"] = "passed"
