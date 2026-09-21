@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from app.modules.literature.application.ingestion import LiteratureIngestionService
 from app.modules.literature.application.errors import LiteratureResourceNotFoundError
 from app.modules.literature.domain.canonical import IdentityConflictError
+from app.modules.literature.domain.workflow import MaterializationResult, BatchMaterializationResult
 
 
 router = APIRouter()
@@ -124,3 +125,85 @@ def membership(paper_id: str, collection_id: str, payload: MembershipRequest, se
     except ValueError as error:
         raise HTTPException(404, detail={"code": "collection_not_found"}) from error
     return {"present": payload.present}
+
+
+@router.get("/migration/status")
+def migration_status(service=Depends(get_ingestion)):
+    pending = service.repository.migration_required
+    return {"migration_required": pending}
+
+
+@router.post("/migration/run")
+def run_migration(
+    dry_run: bool = False,
+    service=Depends(get_ingestion),
+):
+    try:
+        return service.repository.run_migration(dry_run=dry_run)
+    except RuntimeError as error:
+        raise HTTPException(500, detail={"code": "migration_failed"}) from error
+
+
+@router.post("/migration/reconcile-reading-status")
+def reconcile_reading_status(service=Depends(get_ingestion)):
+    return service.repository.reconcile_reading_status()
+
+
+# --- Zotero selective import ---
+
+def get_zotero_import(request: Request):
+    svc = getattr(request.app.state, "zotero_import_service", None)
+    if not svc:
+        raise HTTPException(503, detail={"code": "zotero_import_unavailable"})
+    return svc
+
+
+class SelectiveImportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    item_keys: list[str] = Field(min_length=1, max_length=100)
+
+
+@router.get("/imports/zotero/collections")
+def zotero_collections(service=Depends(get_zotero_import)):
+    return {"collections": service.list_collections()}
+
+
+@router.get("/imports/zotero/items")
+def zotero_importable(
+    collection_id: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    service=Depends(get_zotero_import),
+):
+    return service.list_importable_items(collection_id=collection_id, limit=limit, offset=offset)
+
+
+@router.post("/imports/zotero/selective")
+def zotero_selective_import(payload: SelectiveImportRequest, service=Depends(get_zotero_import)):
+    return {"results": [asdict(r) for r in service.import_selected(payload.item_keys)]}
+
+
+# --- PDF materialization ---
+
+def get_materialization(request: Request):
+    svc = getattr(request.app.state, "materialization_service", None)
+    if not svc:
+        raise HTTPException(503, detail={"code": "materialization_unavailable"})
+    return svc
+
+
+class BatchMaterializeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    paper_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.post("/papers/{paper_id}/materialize-pdf", response_model=MaterializationResult)
+def materialize_pdf(paper_id: str, service=Depends(get_materialization)):
+    from dataclasses import asdict as _asdict
+    return _asdict(service.materialize_paper(paper_id))
+
+
+@router.post("/papers/materialize-pdfs", response_model=BatchMaterializationResult)
+def materialize_batch(payload: BatchMaterializeRequest, service=Depends(get_materialization)):
+    from dataclasses import asdict as _asdict
+    return _asdict(service.materialize_batch(payload.paper_ids))

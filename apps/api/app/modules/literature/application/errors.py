@@ -2,6 +2,18 @@ class LiteratureError(Exception):
     """Expected errors at the Literature module boundary."""
 
 
+class MigrationRequiredError(LiteratureError):
+    pass
+
+
+class WorkflowConflictError(LiteratureError):
+    pass
+
+
+class WorkflowNotFoundError(LiteratureError):
+    pass
+
+
 class ProviderNotConfiguredError(LiteratureError):
     pass
 

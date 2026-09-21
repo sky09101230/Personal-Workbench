@@ -1,0 +1,49 @@
+"""Selective source import through public provider/repository ports."""
+from dataclasses import asdict, dataclass
+
+from app.modules.literature.application.ports import CanonicalLibrary, LiteratureProvider
+from app.modules.literature.application.errors import LiteratureError, MigrationRequiredError
+from app.modules.literature.domain.canonical import IdentityConflictError
+
+
+@dataclass(frozen=True)
+class ImportItemResult:
+    item_key: str
+    paper_id: str | None = None
+    status: str = "imported"
+    created: bool = False
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class ZoteroImportService:
+    repository: CanonicalLibrary
+    provider: LiteratureProvider
+
+    def list_collections(self):
+        return [asdict(c) for c in self.provider.list_collections()]
+
+    def list_importable_items(self, *, collection_id=None, limit=50, offset=0):
+        page = self.provider.list_papers(collection_id=collection_id,limit=limit,offset=offset)
+        items = []
+        for paper in page.items:
+            existing = self.repository.get_paper(paper.id)
+            items.append({**asdict(paper), "import_status": "imported" if existing else "available", "canonical_id": existing.paper.id if existing else None})
+        return {"items": items, "total": page.total}
+
+    def import_selected(self, item_keys):
+        if not 1 <= len(item_keys) <= 100:
+            raise ValueError("Select between 1 and 100 items")
+        results = []
+        for identifier in dict.fromkeys(item_keys):
+            try:
+                changes = self.provider.get_import_item(identifier)
+                result = self.repository.import_selected_item(changes)
+                results.append(ImportItemResult(identifier,result.paper_id,"imported" if result.created else "already_exists",result.created))
+            except MigrationRequiredError:
+                raise
+            except IdentityConflictError:
+                results.append(ImportItemResult(identifier,status="conflict",error="identity_conflict"))
+            except (LiteratureError, ValueError):
+                results.append(ImportItemResult(identifier,status="failed",error="source_item_unavailable"))
+        return results

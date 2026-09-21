@@ -62,15 +62,17 @@ def test_migration_failure_rolls_back_and_backup_recovers(tmp_path, monkeypatch)
         raise RuntimeError("injected migration failure")
     monkeypatch.setattr(new, "_migrate", fail)
     with pytest.raises(RuntimeError, match="injected"):
-        new.ensure_schema()
+        new.run_migration()
     with sqlite3.connect(path) as c:
         assert c.execute("SELECT COUNT(*) FROM literature_papers").fetchone()[0] == 1
-        assert not c.execute("SELECT 1 FROM sqlite_master WHERE name='literature_documents'").fetchone()
+        assert c.execute("SELECT COUNT(*) FROM literature_documents").fetchone()[0] == 0
+        assert not c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone()
     backup = next((tmp_path / "backups").glob("*.db"))
     restored = tmp_path / "restored.db"
     backup_database(str(backup), str(restored))
     assert SQLiteLiteratureRepository(f"sqlite:///{restored}").list_papers().total == 1
     monkeypatch.setattr(new, "_migrate", original)
+    new.run_migration()
     assert new.list_papers().total == 1
 
 
@@ -79,6 +81,7 @@ def test_orphan_user_note_recovered(tmp_path):
     old = SQLiteLiteratureRepository(f"sqlite:///{path}")
     old.save_user_note(LiteratureUserNote("orphan", "missing-paper", "Keep orphan", "manual", "before", "before"))
     new = SQLiteCanonicalRepository(f"sqlite:///{path}")
+    new.run_migration()
     canonical = new.get_paper("missing-paper").paper.id
     assert new.list_user_notes(canonical)[0].content == "Keep orphan"
     assert new.migration_report()["initial"]["conflicts"] == 1
@@ -139,7 +142,7 @@ def test_legacy_migration_preserves_sources_ai_and_aliases(tmp_path):
     old.create_conversation(LiteratureAIConversation("conversation", p.id, "before", "before"))
     old.save_user_note(LiteratureUserNote("note", p.id, "Keep this text", "manual", "before", "before"))
     new = SQLiteCanonicalRepository(f"sqlite:///{path}")
-    new.ensure_schema()
+    new.run_migration()
     canonical = new.get_paper(p.id).paper.id
     assert canonical != p.id
     assert new.list_user_notes(canonical)[0].content == "Keep this text"
@@ -180,5 +183,6 @@ def test_conflicting_legacy_papers_preserved_and_reported(tmp_path):
     p, q = paper(), replace(paper("B"), doi="10.1234/conflict")
     old.replace_library(provider="zotero", library_id="1", collections=(), papers=(p, q), collection_papers={}, notes=(), attachments=(), library_version="1")
     new = SQLiteCanonicalRepository(f"sqlite:///{path}")
+    new.run_migration()
     assert new.list_papers().total == 2
     assert new.migration_report()["initial"]["conflicts"] == 1

@@ -170,6 +170,7 @@ def test_legacy_ai_alias_conversations_selection_and_notes(tmp_path, override_se
     old.save_message(LiteratureAIMessage("old-message", "old-conversation", "user", {"question": "Original question"}, None, None, "before"))
     old.save_user_note(LiteratureUserNote("old-note", p.id, "Original note", "manual", "before", "before"))
     new = SQLiteCanonicalRepository(f"sqlite:///{path}")
+    new.run_migration()
     literature = LiteratureService(NoZotero(), new)
     ai = LiteratureAIService(literature, _Provider(), _Context(), new)
     override_service("literature_service", literature)

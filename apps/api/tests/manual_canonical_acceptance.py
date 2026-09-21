@@ -58,6 +58,7 @@ def main():
         tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'") if not r[0].startswith("literature_ai_") and r[0] != "literature_user_notes"]
         before = {name: table_digest(c, name) for name in tables}
     repository = SQLiteCanonicalRepository(f"sqlite:///{target}")
+    repository.run_migration()
     report = repository.migration_report()
     with closing(sqlite3.connect(target)) as c:
         unchanged = {name: before[name] == table_digest(c, name) for name in tables}

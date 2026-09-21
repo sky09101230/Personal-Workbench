@@ -13,6 +13,7 @@ from app.modules.literature.application.errors import (
     LiteratureError,
     LiteratureResourceNotFoundError,
     PdfUnavailableError,
+    MigrationRequiredError,
     ProviderAuthenticationError,
     ProviderNotConfiguredError,
 )
@@ -223,6 +224,8 @@ def _attachment_availability(attachment: object) -> str:
 
 
 def _http_error(error: LiteratureError) -> HTTPException:
+    if isinstance(error, MigrationRequiredError):
+        return HTTPException(status_code=409, detail={"code":"migration_required"})
     if isinstance(error, InvalidCollectionIdentifierError):
         return HTTPException(status_code=400, detail={"code": "invalid_collection_id"})
     if isinstance(error, ProviderNotConfiguredError):

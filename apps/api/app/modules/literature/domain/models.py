@@ -25,6 +25,7 @@ class Paper:
     openalex_id: str | None = None
     reading_status: str = "inbox"
     sources: tuple[str, ...] = ()
+    origins: tuple[str, ...] = ()
     pdf_available: bool = False
     metadata_status: str = "incomplete"
     date_evidence: dict[str, object] = field(default_factory=dict)

@@ -17,6 +17,7 @@ from app.modules.literature.domain.models import (
     Note, Paper, PaperDetail, PaperPage,
 )
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository, SchemaVersion
+from app.modules.literature.application.errors import MigrationRequiredError
 
 
 _SCHEMA = (
@@ -35,9 +36,16 @@ _SCHEMA = (
     "CREATE TABLE literature_source_collections (source_id TEXT PRIMARY KEY, collection_id TEXT NOT NULL REFERENCES literature_native_collections(id), payload_json TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)",
     "CREATE TABLE literature_source_memberships (source_collection_id TEXT NOT NULL, source_paper_id TEXT NOT NULL, PRIMARY KEY(source_collection_id,source_paper_id))",
     "CREATE TABLE literature_legacy_ai_snapshot (table_name TEXT NOT NULL, row_key TEXT NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(table_name,row_key))",
+    # Stage 2: Upload workflow tables
+    "CREATE TABLE literature_upload_batches (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'staging', created_at TEXT NOT NULL, confirmed_at TEXT, cancelled_at TEXT)",
+    "CREATE TABLE literature_upload_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES literature_upload_batches(id), filename TEXT NOT NULL, staging_key TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'staged', extracted_json TEXT NOT NULL DEFAULT '{}', candidate_json TEXT NOT NULL DEFAULT '{}', warnings_json TEXT NOT NULL DEFAULT '[]', target_paper_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+    "CREATE TABLE literature_metadata_proposals (id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES literature_documents(id), source TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', current_json TEXT NOT NULL, proposed_json TEXT NOT NULL, fields_changed_json TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT)",
+    # Indexes
     "CREATE INDEX literature_assets_paper_idx ON literature_assets(paper_id)",
     "CREATE INDEX literature_origins_paper_idx ON literature_origins(paper_id)",
     "CREATE INDEX literature_evidence_paper_idx ON literature_metadata_evidence(paper_id)",
+    "CREATE INDEX literature_upload_items_batch_idx ON literature_upload_items(batch_id)",
+    "CREATE INDEX literature_proposals_paper_idx ON literature_metadata_proposals(paper_id)",
 )
 _AI_TABLES = ("literature_ai_analyses", "literature_ai_conversations", "literature_ai_messages", "literature_ai_paper_text", "literature_user_notes")
 
@@ -56,7 +64,7 @@ def _id(kind, source=None):
 
 def _paper(payload):
     values = dict(payload)
-    for key in ("authors", "tags", "sources"):
+    for key in ("authors", "tags", "sources", "origins"):
         values[key] = tuple(values.get(key, ()))
     ref = values.get("external_ref")
     values["external_ref"] = ExternalReference(**ref) if ref else None
@@ -86,7 +94,7 @@ def backup_database(path: str, destination: str | None = None) -> str:
 class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
     def __init__(self, database_url: str) -> None:
         super().__init__(database_url)
-        self._canonical_ready = False
+        self._schema_ready = False
 
     @contextmanager
     def _connect(self):
@@ -95,35 +103,76 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             connection.execute("PRAGMA foreign_keys = ON")
             yield connection
 
-    def ensure_schema(self) -> SchemaVersion:
-        if self._canonical_ready:
-            return SchemaVersion(1)
-        backup = None
+    @staticmethod
+    def _has_legacy(c):
+        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        return any(table in tables and c.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone()
+                   for table in ("literature_papers", *_AI_TABLES))
+
+    @property
+    def migration_required(self) -> bool:
         path = Path(self._database_path)
-        if path.exists():
-            with self._connect() as c:
-                exists = c.execute("SELECT 1 FROM sqlite_master WHERE name='literature_canonical_migrations'").fetchone()
-                if exists and c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone():
-                    self._canonical_ready = True
-                    return SchemaVersion(1)
-            backup = backup_database(self._database_path)
+        if not path.exists():
+            return False
+        with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as c:
+            if c.execute("SELECT 1 FROM sqlite_master WHERE name='literature_canonical_migrations'").fetchone():
+                if c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone():
+                    return False
+            return bool(self._has_legacy(c))
+
+    def ensure_schema(self) -> SchemaVersion:
+        if self._schema_ready:
+            return SchemaVersion(2)
         super().ensure_schema()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            # Another repository instance may have completed migration while backup ran.
-            if c.execute("SELECT 1 FROM sqlite_master WHERE name='literature_canonical_migrations'").fetchone():
-                if not c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone():
-                    raise RuntimeError("Incomplete canonical migration ledger; restore backup before retry")
-                self._canonical_ready = True
-                return SchemaVersion(1)
             for statement in _SCHEMA:
-                c.execute(statement)
+                c.execute(statement.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ").replace("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS "))
+            c.execute("CREATE TABLE IF NOT EXISTS literature_workflow_schema (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+            c.execute("CREATE TABLE IF NOT EXISTS literature_state_edits (paper_id TEXT PRIMARY KEY, edited_at TEXT NOT NULL)")
+            c.execute("CREATE TABLE IF NOT EXISTS literature_maintenance_actions (name TEXT PRIMARY KEY, report_json TEXT NOT NULL, applied_at TEXT NOT NULL)")
+            c.execute("INSERT OR IGNORE INTO literature_workflow_schema VALUES (2,?)", (_now(),))
+            migrated = c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone()
+            if not migrated and not self._has_legacy(c):
+                report = self._report(c)
+                report["backup"] = None
+                report["fresh"] = True
+                c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
+        self._schema_ready = True
+        return SchemaVersion(2)
+
+    def run_migration(self, *, dry_run: bool = False) -> dict:
+        # Copy before ensure_schema: dry-run is read-only even on legacy v1/v2 databases.
+        if dry_run:
+            import tempfile
+            with tempfile.TemporaryDirectory(prefix="literature-migration-") as temporary:
+                path = Path(temporary) / "dry-run.db"
+                if Path(self._database_path).exists():
+                    backup_database(self._database_path, str(path))
+                dry = type(self)(f"sqlite:///{path}")
+                result = dry.run_migration()
+                return {**result, "dry_run": True}
+        backup = backup_database(self._database_path) if self.migration_required else None
+        self.ensure_schema()
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute("SELECT report_json FROM literature_canonical_migrations WHERE version=1").fetchone()
+            if row:
+                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False}
             self._migrate(c)
             report = self._report(c)
             report["backup"] = backup
-            c.execute("INSERT INTO literature_canonical_migrations VALUES (1, ?)", (_json(report),))
-        self._canonical_ready = True
-        return SchemaVersion(1)
+            c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
+        return {"status": "migrated", "report": report, "dry_run": False}
+
+    def _require_canonical(self):
+        if self.migration_required:
+            raise MigrationRequiredError("Canonical migration must be explicitly run before Library access")
+        self.ensure_schema()
+
+    def get_library_state(self, *, provider, library_id):
+        self._require_canonical()
+        return super().get_library_state(provider=provider, library_id=library_id)
 
     def _migrate(self, c):
         for row in c.execute("SELECT * FROM literature_papers ORDER BY id").fetchall():
@@ -156,6 +205,32 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                     self._conflict(c, old, "Page cache collision retained under legacy ID", data)
                     continue
                 c.execute(f"UPDATE {table} SET paper_id=? WHERE rowid=?", (canonical, int(key)))
+
+        # Include recovered orphan AI papers in the legacy saved-state transition.
+        c.execute("UPDATE literature_documents SET reading_status='saved' WHERE reading_status='inbox'")
+
+    def reconcile_reading_status(self):
+        """One-time correction for databases that migrated with 'inbox' status.
+
+        Sets papers to 'saved' if they have a zotero_import or legacy_recovery
+        origin AND their reading_status is still 'inbox' (user hasn't changed it).
+        Idempotent and auditable.
+        """
+        self._require_canonical()
+        with self._connect() as c:
+            c.execute("BEGIN IMMEDIATE")
+            previous = c.execute("SELECT report_json FROM literature_maintenance_actions WHERE name='legacy_saved_state'").fetchone()
+            if previous:
+                return {"corrected": 0, "already_applied": True}
+            corrected = c.execute(
+                "UPDATE literature_documents SET reading_status='saved' "
+                "WHERE reading_status='inbox' AND deleted=0 AND id IN ("
+                " SELECT a.paper_id FROM literature_paper_aliases a JOIN literature_papers p ON p.id=a.alias"
+                ") AND id NOT IN (SELECT paper_id FROM literature_state_edits)"
+            ).rowcount
+            report = {"corrected": corrected, "already_applied": False}
+            c.execute("INSERT INTO literature_maintenance_actions VALUES ('legacy_saved_state',?,?)", (_json(report), _now()))
+            return report
 
     @staticmethod
     def _legacy_ref(c, kind, resource_id):
@@ -262,13 +337,13 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         return IngestResult(canonical, created, reason)
 
     def ingest(self, incoming: Ingestion) -> IngestResult:
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             return self._ingest(c, incoming)
 
     def ingest_appearances(self, incoming, appearances):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             result = self._ingest(c, incoming)
@@ -277,21 +352,26 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             return result
 
     def ingest_asset(self, incoming, asset):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
-            result = self._ingest(c, incoming)
-            for row in c.execute("SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1", (result.paper_id,)):
-                existing = _attachment(json.loads(row[0]))
-                if existing.sha256 == asset.sha256 and existing.role == asset.role:
-                    return result, existing
+            return self._ingest_asset(c, incoming, asset)
+
+    def _ingest_asset(self, c, incoming, asset):
+        result = self._ingest(c, incoming)
+        for row in c.execute("SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1", (result.paper_id,)):
+            existing = _attachment(json.loads(row[0]))
+            if existing.sha256 == asset.sha256 and existing.role == asset.role:
+                asset = existing
+                break
+        else:
             asset = self._asset(c, replace(asset, paper_id=result.paper_id))
-            if asset.role == "primary":
-                row = c.execute("SELECT metadata_json FROM literature_documents WHERE id=?", (result.paper_id,)).fetchone()
-                metadata = json.loads(row[0])
-                metadata["primary_asset_id"] = asset.id
-                c.execute("UPDATE literature_documents SET metadata_json=? WHERE id=?", (_json(metadata), result.paper_id))
-            return result, asset
+        if asset.role == "primary":
+            row = c.execute("SELECT metadata_json FROM literature_documents WHERE id=?", (result.paper_id,)).fetchone()
+            metadata = json.loads(row[0])
+            metadata["primary_asset_id"] = asset.id
+            c.execute("UPDATE literature_documents SET metadata_json=? WHERE id=?", (_json(metadata), result.paper_id))
+        return result, asset
 
     def _sync_collections(self, c, collections):
         fresh = set()
@@ -333,7 +413,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         return asset
 
     def add_asset(self, asset: Attachment) -> Attachment:
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             canonical = self._resolve(c, asset.paper_id)
@@ -353,7 +433,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         self._sync(provider, library_id, changes, full=False)
 
     def _sync(self, provider, library_id, changes, *, full):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             if full:
@@ -405,13 +485,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
     def _read_paper(self, c, row):
         paper = _paper(json.loads(row["metadata_json"]))
         sources = {r[0] for r in c.execute("SELECT provider FROM literature_source_references WHERE paper_id=? AND active=1", (paper.id,))}
-        origins = {r[0] for r in c.execute("SELECT kind FROM literature_origins WHERE paper_id=?", (paper.id,))}
-        sources.update(x for x in ("radar", "manual_pdf") if x in origins)
+        origin_kinds = tuple(sorted({r[0] for r in c.execute("SELECT kind FROM literature_origins WHERE paper_id=?", (paper.id,))}))
         pdf = any(json.loads(r[0]).get("downloadable") and json.loads(r[0]).get("content_type") == "application/pdf" for r in c.execute("SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1", (paper.id,)))
-        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), pdf_available=pdf)
+        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf)
 
     def get_paper(self, paper_id):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             canonical = self._resolve(c, paper_id)
             row = c.execute("SELECT * FROM literature_documents WHERE id=? AND deleted=0", (canonical,)).fetchone()
@@ -423,7 +502,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
     def list_papers(self, *, collection_id=None, limit=50, offset=0, query=None, author=None, year=None, journal=None, tag=None, reading_status=None):
         if not 1 <= limit <= 100 or offset < 0:
             raise ValueError("Invalid pagination")
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             collection = c.execute("SELECT collection_id FROM literature_source_collections WHERE source_id=?", (collection_id,)).fetchone()
             if collection:
@@ -447,18 +526,18 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             return PaperPage(tuple(self._read_paper(c, r) for r in papers[offset:offset + limit]), len(papers), version[0] if version else None)
 
     def list_collections(self):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             return tuple(Collection(*r) for r in c.execute("SELECT id,name,parent_id FROM literature_native_collections ORDER BY name,id"))
 
     def list_filter_options(self):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             papers = [_paper(json.loads(r[0])) for r in c.execute("SELECT metadata_json FROM literature_documents WHERE deleted=0")]
         return FilterOptions(tuple(sorted({p.year for p in papers if p.year}, reverse=True)), tuple(sorted({p.journal for p in papers if p.journal})), tuple(sorted({t for p in papers for t in p.tags})))
 
     def list_notes(self, paper_id):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             result = []
             for row in c.execute("SELECT payload_json,active FROM literature_source_notes WHERE paper_id=?", (self._resolve(c, paper_id),)):
@@ -469,12 +548,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             return tuple(result)
 
     def list_attachments(self, paper_id):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             return tuple(replace(_attachment(json.loads(r[0])), active=bool(r[1]), downloadable=bool(r[1]) and bool(json.loads(r[0])["downloadable"])) for r in c.execute("SELECT payload_json,active FROM literature_assets WHERE paper_id=? ORDER BY id", (self._resolve(c, paper_id),)))
 
     def provenance(self, paper_id):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             canonical = self._resolve(c, paper_id)
             return {
@@ -488,7 +567,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             }
 
     def set_state(self, paper_id, *, reading_status=None, deleted=None, tags=None):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             canonical = self._resolve(c, paper_id)
@@ -496,6 +575,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 if reading_status not in {"inbox", "saved", "reading", "read", "archived"}:
                     raise ValueError("Invalid reading status")
                 c.execute("UPDATE literature_documents SET reading_status=? WHERE id=?", (reading_status, canonical))
+                c.execute("INSERT INTO literature_state_edits VALUES (?,?) ON CONFLICT(paper_id) DO UPDATE SET edited_at=excluded.edited_at", (canonical, _now()))
             if deleted is not None:
                 c.execute("UPDATE literature_documents SET deleted=? WHERE id=?", (int(deleted), canonical))
             if tags is not None:
@@ -507,14 +587,14 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 c.execute("UPDATE literature_documents SET metadata_json=?,field_priority_json=? WHERE id=?", (_json(data), _json(priorities), canonical))
 
     def create_collection(self, name, parent_id=None):
-        self.ensure_schema()
+        self._require_canonical()
         collection = Collection(_id("collection"), name.strip(), parent_id)
         with self._connect() as c:
             c.execute("INSERT INTO literature_native_collections VALUES (?,?,?)", (collection.id, collection.name, parent_id))
         return collection
 
     def set_membership(self, paper_id, collection_id, present):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             canonical = self._resolve(c, paper_id)
             if not c.execute("SELECT 1 FROM literature_native_collections WHERE id=?", (collection_id,)).fetchone():
@@ -525,12 +605,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 c.execute("DELETE FROM literature_native_memberships WHERE collection_id=? AND paper_id=?", (collection_id, canonical))
 
     def saved_origins(self, keys):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             return {key: row[0] for key in keys if (row := c.execute("SELECT o.paper_id FROM literature_origins o JOIN literature_documents d ON d.id=o.paper_id WHERE o.kind='radar' AND o.origin_key=? AND d.deleted=0", (key,)).fetchone())}
 
     def migration_report(self):
-        self.ensure_schema()
+        self._require_canonical()
         with self._connect() as c:
             initial = json.loads(c.execute("SELECT report_json FROM literature_canonical_migrations WHERE version=1").fetchone()[0])
             return {"initial": initial, "current": self._report(c)}

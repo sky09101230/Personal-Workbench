@@ -167,6 +167,49 @@ class ZoteroWebProvider:
         assets, _ = self._list_assets_with_version(params={"format": "json"})
         return assets
 
+    def get_import_item(self, identifier: str) -> LibraryChanges:
+        """Decode connector identifiers only inside the connector and load its resources."""
+        prefix = f"{self.name}:{self.library_id}:"
+        key = identifier.removeprefix(prefix)
+        if not re.fullmatch(r"[A-Z0-9]{8}", key):
+            raise ValueError("Invalid item identifier for this Zotero library")
+        record = self._get_item(key)
+        if self._is_trashed(record) or self._item_type(record) in {"attachment", "note", "annotation"}:
+            raise ValueError("Selected item is not an active paper")
+        paper = self._map_paper(record)
+        collection_ids = self._collection_ids(record)
+        all_collections = {c.id: c for c in self.list_collections()} if collection_ids else {}
+        wanted = set(collection_ids)
+        for cid in tuple(wanted):
+            current = all_collections.get(cid)
+            while current and current.parent_id and current.parent_id not in wanted:
+                wanted.add(current.parent_id)
+                current = all_collections.get(current.parent_id)
+        children = self._list_all(f"items/{key}/children")
+        notes, attachments = [], []
+        for child in children:
+            if self._is_trashed(child):
+                continue
+            if self._item_type(child) == "note":
+                note = self._map_note(child)
+                if note:
+                    notes.append(note)
+            elif self._item_type(child) == "attachment":
+                attachment = self._map_attachment(child)
+                if attachment:
+                    attachments.append(attachment)
+                    attachment_key = attachment.external_ref.item_key
+                    for annotation in self._list_all(f"items/{attachment_key}/children"):
+                        if not self._is_trashed(annotation) and self._item_type(annotation) == "annotation":
+                            note = self._map_annotation(annotation, key)
+                            if note:
+                                notes.append(note)
+        return LibraryChanges(
+            collections=tuple(c for cid,c in all_collections.items() if cid in wanted),
+            papers=(ChangedPaper(paper, collection_ids),),
+            notes=tuple(notes), attachments=tuple(attachments),
+        )
+
     def open_attachment(
         self,
         attachment: Attachment,

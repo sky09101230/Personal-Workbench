@@ -24,12 +24,14 @@ def main():
             target = str(Path(tmp) / "dry-run.db")
             backup_database(str(source), target)
             repository = SQLiteCanonicalRepository(f"sqlite:///{target}")
+            repository.run_migration()
             report = repository.migration_report()
             with closing(sqlite3.connect(target)) as c:
                 report["integrity"] = c.execute("PRAGMA integrity_check").fetchone()[0]
             print(json.dumps({"dry_run": True, "source": str(source), **report}, indent=2))
     else:
         repository = SQLiteCanonicalRepository(f"sqlite:///{source}")
+        repository.run_migration()
         print(json.dumps({"dry_run": False, "source": str(source), **repository.migration_report()}, indent=2))
 
 

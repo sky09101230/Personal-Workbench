@@ -16,6 +16,7 @@ from app.modules.literature.application.errors import (
     LiteratureAIResourceNotFoundError,
     LiteratureError,
     LiteratureResourceNotFoundError,
+    MigrationRequiredError,
 )
 
 
@@ -361,6 +362,8 @@ def create_user_note(
 
 
 def _http_error(error: Exception) -> HTTPException:
+    if isinstance(error, MigrationRequiredError):
+        return HTTPException(status_code=409, detail={"code":"migration_required"})
     if isinstance(error, LiteratureResourceNotFoundError):
         return HTTPException(
             status_code=404,
