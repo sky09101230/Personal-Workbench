@@ -40,7 +40,7 @@ export function PaperPane({
       {loading ? (
         <WorkspaceState icon={<RefreshCw size={20} className="spin" />} title="Loading your library" detail="Reading collections and paper metadata." />
       ) : dataError ? (
-        <WorkspaceState icon={<AlertCircle size={20} />} title="Library unavailable" detail="Check the API service and Zotero permissions, then refresh." />
+        <WorkspaceState icon={<AlertCircle size={20} />} title="Library unavailable" detail="Check the Workbench API service, then refresh." />
       ) : notConfigured && totalPapers === 0 ? (
         <WorkspaceState icon={<AlertCircle size={20} />} title="Zotero is not configured" detail="Add ZOTERO_USER_ID and ZOTERO_API_KEY on the API service, then restart it." />
       ) : papers.length > 0 ? (
@@ -62,6 +62,7 @@ export function PaperPane({
                   {paper.journal || "Publication not recorded"}
                   {paper.year ? <span>{paper.year}</span> : null}
                 </span>
+                <span className="paper-tags"><span className="paper-tag">{paper.reading_status}</span>{paper.sources?.map((source) => <span className="paper-tag" key={source}>{source === "manual_pdf" ? "Upload" : source === "radar" ? "Radar" : source}</span>)}{paper.pdf_available ? <span className="paper-tag">PDF</span> : null}</span>
                 {paper.tags.length > 0 ? (
                   <span className="paper-tags" aria-label="Paper tags">
                     {paper.tags.slice(0, 2).map((tag) => <span className="paper-tag" key={tag}>{tag}</span>)}
@@ -87,7 +88,7 @@ export function PaperPane({
           action={<button className="action-button action-primary" type="button" onClick={onSync}>Sync Zotero</button>}
         />
       ) : (
-        <WorkspaceState icon={<FileText size={20} />} title="No matching papers" detail="This collection or filter combination has no cached papers." />
+        <WorkspaceState icon={<FileText size={20} />} title="No matching papers" detail="Try another filter, save a Radar recommendation, or use Import to add papers." />
       )}
     </section>
   );

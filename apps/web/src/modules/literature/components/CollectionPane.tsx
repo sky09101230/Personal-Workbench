@@ -1,5 +1,7 @@
 import { BookOpen, Folder } from "lucide-react";
 import type { ReactNode } from "react";
+import { useState } from "react";
+import { postJson } from "../api";
 import type { Collection, FiltersResponse } from "../types";
 
 type CollectionPaneProps = {
@@ -13,6 +15,7 @@ type CollectionPaneProps = {
   journal: string;
   tag: string;
   onSelect: (collectionId: string | null) => void;
+  onCreated: () => void;
   onFilterChange: (name: "author" | "year" | "journal" | "tag", value: string) => void;
 };
 
@@ -28,7 +31,10 @@ export function CollectionPane({
   tag,
   onSelect,
   onFilterChange,
+  onCreated,
 }: CollectionPaneProps) {
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState("");
   const orderedCollections = [...collections].sort((left, right) =>
     left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }),
   );
@@ -50,6 +56,10 @@ export function CollectionPane({
         </div>
 
         <div className="pane-subheading">Collections</div>
+        <form className="native-collection-form" onSubmit={(e) => { e.preventDefault(); if (!newName.trim()) return; void postJson("/api/literature/collections", { name: newName.trim() }).then(() => { setNewName(""); setError(""); onCreated(); }).catch(() => setError("Could not create collection.")); }}>
+          <input aria-label="New collection name" placeholder="New collection" value={newName} maxLength={200} onChange={(e) => setNewName(e.target.value)} /><button type="submit" disabled={!newName.trim()}>Add</button>
+        </form>
+        {error ? <p role="alert">{error}</p> : null}
         {collections.length > 0 ? (
           <div className="collection-list">
             {orderedCollections.map((collection) => (
@@ -67,7 +77,7 @@ export function CollectionPane({
             ))}
           </div>
         ) : (
-          <p className="collection-empty">{providerReady ? "No collections yet" : "Configure Zotero to view collections"}</p>
+          <p className="collection-empty">{providerReady ? "No collections yet" : "Create a collection to organize your papers"}</p>
         )}
 
         <div className="pane-subheading">Filters</div>

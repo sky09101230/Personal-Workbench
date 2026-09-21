@@ -29,6 +29,10 @@ export type Paper = {
   doi: string | null;
   tags: string[];
   external_ref: ExternalReference | null;
+  reading_status: "inbox" | "saved" | "reading" | "read" | "archived";
+  sources: string[];
+  pdf_available: boolean;
+  metadata_status: string;
 };
 
 export type Note = {
@@ -50,6 +54,9 @@ export type Attachment = {
   link_mode: string | null;
   availability: "available" | "linked_file" | "provider_unavailable" | "not_pdf";
   external_ref: ExternalReference | null;
+  role: "primary" | "preprint" | "supplementary";
+  storage_kind: string;
+  active: boolean;
 };
 
 export type CollectionsResponse = { items: Collection[] };

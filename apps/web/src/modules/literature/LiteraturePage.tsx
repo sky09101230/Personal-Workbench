@@ -4,6 +4,10 @@ import { CollectionPane } from "./components/CollectionPane";
 import { LiteratureHeader } from "./components/LiteratureHeader";
 import { PaperInspector } from "./components/PaperInspector";
 import { PaperPane } from "./components/PaperPane";
+import { ImportPanel } from "./components/ImportPanel";
+import { RadarInbox } from "../news/components/RadarInbox";
+import "../news/news.css";
+import "./literature.css";
 import type {
   Collection,
   CollectionsResponse,
@@ -27,13 +31,15 @@ export function LiteraturePage({
   onStatusReload: () => Promise<void>;
 }) {
   const providerReady = status?.provider_configured ?? false;
+  const [view, setView] = useState<"library" | "radar" | "import">("library");
+  const [readingStatus, setReadingStatus] = useState("");
   const [collections, setCollections] = useState<Collection[]>([]);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [filters, setFilters] = useState<FiltersResponse>(EMPTY_FILTERS);
   const [totalPapers, setTotalPapers] = useState(0);
   const [libraryPaperTotal, setLibraryPaperTotal] = useState(0);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
-  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(null);
+  const [selectedPaperId, setSelectedPaperId] = useState<string | null>(new URLSearchParams(window.location.search).get("paper"));
   const [searchQuery, setSearchQuery] = useState("");
   const [author, setAuthor] = useState("");
   const [year, setYear] = useState("");
@@ -76,12 +82,10 @@ export function LiteraturePage({
       if (year) query.set("year", year);
       if (journal) query.set("journal", journal);
       if (tag) query.set("tag", tag);
+      if (readingStatus) query.set("reading_status", readingStatus);
       const response = await getJson<PapersResponse>(`/api/literature/papers?${query.toString()}`);
       setPapers(response.items);
       setTotalPapers(response.total);
-      setSelectedPaperId((current) => (
-        current && response.items.some((paper) => paper.id === current) ? current : null
-      ));
     } catch {
       setDataError(true);
       setPapers([]);
@@ -89,7 +93,7 @@ export function LiteraturePage({
     } finally {
       setLoadingPapers(false);
     }
-  }, [author, journal, searchQuery, selectedCollectionId, tag, year]);
+  }, [author, journal, searchQuery, selectedCollectionId, tag, year, readingStatus]);
 
   useEffect(() => {
     if (status) void loadMetadata();
@@ -163,6 +167,11 @@ export function LiteraturePage({
         onSearchChange={(value) => { setSearchQuery(value); setOffset(0); }}
         onSync={() => void syncLibrary()}
       />
+      <nav className="library-tabs" aria-label="Literature views">
+        {(["library", "radar", "import"] as const).map((tab) => <button key={tab} type="button" aria-pressed={view === tab} className={view === tab ? "active" : ""} onClick={() => { setView(tab); if (tab === "library") { void loadMetadata(); void loadPapers(offset); } }}>{tab === "library" ? "Library" : tab === "radar" ? "Radar" : "Import"}</button>)}
+        {view === "library" ? <label>Reading status <select aria-label="Reading status filter" value={readingStatus} onChange={(e) => { setReadingStatus(e.target.value); setOffset(0); }}><option value="">All</option>{["inbox", "saved", "reading", "read", "archived"].map((s) => <option key={s} value={s}>{s}</option>)}</select></label> : null}
+      </nav>
+      {view === "radar" ? <div className="library-radar-scroll"><RadarInbox /></div> : view === "import" ? <ImportPanel providerReady={providerReady} syncing={syncing} onSync={() => void syncLibrary()} onImported={(id) => { setView("library"); setSelectedPaperId(id); void loadMetadata(); void loadPapers(0); }} /> : <>
       <div className="literature-workspace">
         <CollectionPane
           author={author}
@@ -176,13 +185,14 @@ export function LiteraturePage({
           year={year}
           onFilterChange={changeFilter}
           onSelect={selectCollection}
+          onCreated={() => void loadMetadata()}
         />
         <PaperPane
           dataError={connectionError}
           heading={selectedCollection?.name || "All papers"}
           loading={loadingPapers || statusLoading}
-          notConfigured={!providerReady}
-          notSynced={notSynced}
+          notConfigured={false}
+          notSynced={notSynced && providerReady}
           offset={offset}
           pageSize={PAGE_SIZE}
           papers={papers}
@@ -192,8 +202,9 @@ export function LiteraturePage({
           onSelect={setSelectedPaperId}
           onSync={() => void syncLibrary()}
         />
-        <PaperInspector paperId={selectedPaperId} />
+        <PaperInspector paperId={selectedPaperId} onChanged={() => { void loadMetadata(); void loadPapers(offset); }} />
       </div>
+      </>}
     </section>
   );
 }

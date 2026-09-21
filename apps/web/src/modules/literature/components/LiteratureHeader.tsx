@@ -36,8 +36,8 @@ export function LiteratureHeader({
     : connectionError
     ? "Library unavailable"
     : providerReady
-      ? `${providerName ?? "Zotero"} connected · ${totalPapers} papers`
-      : "Provider not configured";
+      ? `${totalPapers} papers · ${providerName ?? "Zotero"} connected`
+      : `${totalPapers} papers · Workbench Library`;
 
   return (
     <header className="literature-header">

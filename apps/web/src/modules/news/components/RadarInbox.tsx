@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getNewsJson, patchNewsJson } from "../api";
+import { ApiError, postJson } from "../../../core/api";
 import type {
   RadarLatestResponse,
   RadarPaper,
@@ -31,6 +32,9 @@ export function RadarInbox() {
   const [error, setError] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState(false);
+  const [saved, setSaved] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,12 +44,31 @@ export function RadarInbox() {
         "/api/news/papers/research/radar/latest",
       );
       setRun(response.run);
+      if (response.run) {
+        const ids = [...response.run.recommendations, ...response.run.verified_alternatives].map((p) => p.recommendation_id);
+        try {
+          const state = await postJson<{ saved: Record<string, string> }>("/api/literature/imports/radar-saved", { recommendation_ids: ids });
+          setSaved(state.saved);
+          setSaveError("");
+        } catch { setSaveError("Library saved state is unavailable. Radar review is still available."); }
+      }
     } catch {
       setError(true);
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const savePaper = async (id: string) => {
+    setSaving(id);
+    setSaveError("");
+    try {
+      const result = await postJson<{ paper_id: string }>(`/api/literature/imports/radar/${encodeURIComponent(id)}`);
+      setSaved((current) => ({ ...current, [id]: result.paper_id }));
+    } catch (error) {
+      setSaveError(error instanceof ApiError && error.code === "identity_conflict" ? "This paper has conflicting identifiers. It was not merged; inspect the source metadata before saving." : "Could not save to Library. Try again.");
+    } finally { setSaving(null); }
+  };
 
   useEffect(() => {
     void load();
@@ -154,6 +177,7 @@ export function RadarInbox() {
       {reviewError ? (
         <div className="radar-inline-error">Review state could not be saved. Try again.</div>
       ) : null}
+      {saveError ? <div className="radar-inline-error" role="alert">{saveError}</div> : null}
 
       <section className="radar-section">
         <div className="radar-section-heading">
@@ -169,6 +193,9 @@ export function RadarInbox() {
               paper={paper}
               updating={updating === paper.recommendation_id}
               onReview={updateReview}
+              savedId={saved[paper.recommendation_id]}
+              saving={saving === paper.recommendation_id}
+              onSave={savePaper}
               key={paper.recommendation_id}
             />
           ))}
@@ -189,6 +216,9 @@ export function RadarInbox() {
               paper={paper}
               updating={updating === paper.recommendation_id}
               onReview={updateReview}
+              savedId={saved[paper.recommendation_id]}
+              saving={saving === paper.recommendation_id}
+              onSave={savePaper}
               alternative
               key={paper.recommendation_id}
             />
@@ -209,11 +239,17 @@ function RadarPaperCard({
   updating,
   alternative = false,
   onReview,
+  savedId,
+  saving,
+  onSave,
 }: {
   paper: RadarPaper;
   updating: boolean;
   alternative?: boolean;
   onReview: (recommendationId: string, status: RadarReviewStatus) => Promise<void>;
+  savedId?: string;
+  saving: boolean;
+  onSave: (id: string) => Promise<void>;
 }) {
   const relationship = paper.relationship_to_library
     ?? recordText(paper.zotero_relationship, "relationship_summary");
@@ -273,6 +309,7 @@ function RadarPaperCard({
       </div>
 
       <div className="radar-paper-footer">
+        {savedId ? <a className="library-save" href={`/literature?paper=${encodeURIComponent(savedId)}`}>Saved · Open Library</a> : <button className="library-save" type="button" disabled={saving} onClick={() => void onSave(paper.recommendation_id)}>{saving ? "Saving…" : "Save to Library"}</button>}
         <div className="radar-evidence-line">
           {evidenceDepth ? <span>Evidence: {evidenceDepth.replace("_", " ")}</span> : null}
           {paper.doi ? <span>DOI {paper.doi}</span> : paper.arxiv_id ? <span>arXiv {paper.arxiv_id}</span> : null}

@@ -38,6 +38,10 @@ export function LiteratureAIAssistant({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setAnalyses([]);
+    setConversation(null);
+    setMessages([]);
+    setQuestion("");
     Promise.all([
       getJson<AnalysisListResponse>(`/api/literature/papers/${encodedPaperId}/ai/analyses`),
       getJson<ConversationListResponse>(`/api/literature/papers/${encodedPaperId}/ai/conversations`),
