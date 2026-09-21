@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from dataclasses import dataclass
 import json
 from collections.abc import Iterable, Mapping
@@ -229,7 +230,7 @@ class SQLiteLiteratureRepository:
         if self._database_path != ":memory:":
             Path(self._database_path).parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(self._database_path) as connection:
+        with closing(sqlite3.connect(self._database_path)) as connection, connection:
             connection.execute("PRAGMA foreign_keys = ON")
             connection.execute("BEGIN IMMEDIATE")
             try:

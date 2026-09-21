@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Callable, Iterable
 
 
@@ -21,6 +21,15 @@ class Paper:
     tags: tuple[str, ...] = ()
     external_ref: ExternalReference | None = None
 
+    arxiv_id: str | None = None
+    openalex_id: str | None = None
+    reading_status: str = "inbox"
+    sources: tuple[str, ...] = ()
+    pdf_available: bool = False
+    metadata_status: str = "incomplete"
+    date_evidence: dict[str, object] = field(default_factory=dict)
+    primary_asset_id: str | None = None
+
 
 @dataclass(frozen=True)
 class Collection:
@@ -39,6 +48,8 @@ class Note:
     page_label: str | None = None
     color: str | None = None
     external_ref: ExternalReference | None = None
+    source_paper_id: str | None = None
+    active: bool = True
 
 
 @dataclass(frozen=True)
@@ -50,6 +61,13 @@ class Attachment:
     downloadable: bool = False
     link_mode: str | None = None
     external_ref: ExternalReference | None = None
+    role: str = "primary"
+    storage_kind: str = "zotero"
+    storage_key: str | None = None
+    sha256: str | None = None
+    active: bool = True
+    content_version: str | None = None
+    source_paper_id: str | None = None
 
 
 @dataclass(frozen=True)
