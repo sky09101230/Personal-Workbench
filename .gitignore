@@ -19,4 +19,6 @@ data/literature-assets/
 
 .DS_Store
 
+.codex/
+
 *.lnk
