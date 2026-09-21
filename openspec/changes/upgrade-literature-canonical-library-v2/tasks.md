@@ -34,4 +34,4 @@
 - [x] 6.1 Run full backend pytest, frontend build, compileall, diff check and secret scan; record results.
 - [x] 6.2 Back up real SQLite, dry-run then migrate, verify counts/content and rehearse rollback into a separate DB; record report. The application migrated during interruption; final CLI replay was a verified no-op.
 - [x] 6.3 Verify eight requested acceptance cases and real metadata/PDF/AI where available; distinguish fixtures from live external checks. See acceptance.md for the in-app file chooser limitation.
-- [ ] 6.4 Final strict validation, staged review, logical commits and feature-branch push; report remote branch and V2.1 limitations.
+- [x] 6.4 Final strict validation, staged review, logical commits and feature-branch push; report remote branch and V2.1 limitations.

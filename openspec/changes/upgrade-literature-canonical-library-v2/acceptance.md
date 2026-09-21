@@ -138,11 +138,11 @@ Reproducible isolated manual acceptance: `PYTHONPATH=apps/api python apps/api/te
 - `bd2c606` canonical identity and recoverable migration.
 - `fb164f1` source/Radar/assets/AI integration and tests.
 - `749d6e0` native Library/Radar/Import UI.
-- Final acceptance/documentation commit follows these.
+- `08aacbb` final migration and real acceptance documentation.
 
 ## 19. Remote branch
 
-Delivery target: `origin/codex/literature-v2-canonical-library`. Push is verified in the final task response. No merge into main is authorized or performed.
+Pushed and verified: `origin/codex/literature-v2-canonical-library` at `https://github.com/sky09101230/Personal-Workbench/tree/codex/literature-v2-canonical-library`. No merge into main was performed.
 
 ## 20. Known limitations and operations
 
