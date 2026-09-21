@@ -1,9 +1,9 @@
 # Literature V2 Backend Workflows — 上下文握手文档 (Context Handshake Document)
 
-> **生成时间**: 2026-09-21 21:59 (Local)  
-> **当前分支**: `claude/literature-v2-backend-workflows`  
-> **基线分支**: `codex/literature-v2-canonical-library`  
-> **目标范围**: Stage 1（Canonical backend hardening + API contract freeze）+ Stage 2（PLAB-style Literature workflow backend）  
+> **生成时间**: 2026-09-21 21:59 (Local)
+> **当前分支**: `claude/literature-v2-backend-workflows`
+> **基线分支**: `codex/literature-v2-canonical-library`
+> **目标范围**: Stage 1（Canonical backend hardening + API contract freeze）+ Stage 2（PLAB-style Literature workflow backend）
 > **禁止项**: 不做前端 UI、不重构非关联基础设施、不合并 main / codex 分支。
 
 ---
