@@ -49,4 +49,4 @@
 - [x] 8.3 Complete metadata proposals with alias resolution, stale/concurrent acceptance checks, identifier uniqueness and evidence; test accept/reject/edit conflicts.
 - [x] 8.4 Complete selected Zotero import and bounded PDF materialization; test remote resource loading, local preference, size limits and cleanup.
 - [x] 8.5 Freeze A–G API contracts in docs/contracts/literature-v2-api.md; verify OpenAPI schemas and endpoint tests.
-- [ ] 8.6 Run full backend pytest, compileall, strict OpenSpec validation, diff/secret checks and existing-DB copy upgrade; commit/push claude/literature-v2-backend-workflows without UI changes or merges.
+- [x] 8.6 Run full backend pytest, compileall, strict OpenSpec validation, diff/secret checks and existing-DB copy upgrade; commit/push claude/literature-v2-backend-workflows without UI changes or merges.

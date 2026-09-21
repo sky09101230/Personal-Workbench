@@ -24,7 +24,7 @@
 - Full backend pytest: **225 passed** (209 baseline + 16 new workflow tests). One existing Starlette/httpx deprecation warning remains.
 - compileall: passed for apps/api/app and apps/api/tests.
 - OpenSpec strict validation: passed for upgrade-literature-canonical-library-v2.
-- git diff --check: passed; final staged/branch secret scanning occurs before push.
+- git diff --check and staged/full-branch secret scanning: passed.
 - No frontend files changed; frontend build/browser work is not claimed for this backend-only continuation.
 
 Real configured database was copied using SQLite backup. Workflow schema initialization preserved digests of all **49 existing tables**. API-level upload → candidate edit → confirm → metadata proposal accept → local PDF range response all passed. Database integrity was ok, with no FK errors.
@@ -46,6 +46,8 @@ $env:PYTHONPATH = 'apps/api'
 ```
 
 ## Boundaries / next consumer notes
+
+Delivered commits: `9b33a89` backend/workflows/tests, `5bfa70b` frozen contracts and acceptance, `f1ea424` original handshake whitespace normalization. Pushed to `origin/claude/literature-v2-backend-workflows`; final task-marker commit follows. No merge was performed.
 
 - UI was intentionally not changed. A frontend consumer must read `origins` separately rather than expecting Radar/Upload in `sources`.
 - Native metadata correction cannot remove/replace conflicting strong identifiers; dedicated reviewed correction/merge tools remain out of scope. No automatic DOI lookup, OCR, AI metadata enrichment, worker or scheduler was added.
