@@ -149,8 +149,11 @@ class PaperContextBuilder:
             return ()
 
     def _pages(self, paper_id: str) -> tuple[LiteratureAIPaperTextPage, ...]:
+        paper_id = self._literature.get_paper(paper_id).paper.id
+        attachment = self._literature.primary_attachment(paper_id)
+        extractor_version = f"{EXTRACTOR_VERSION}:{attachment.id}:{attachment.sha256 or attachment.content_version or ''}"
         cached = self._repository.list_paper_text(paper_id)
-        if cached and all(page.extractor_version == EXTRACTOR_VERSION for page in cached):
+        if cached and all(page.extractor_version == extractor_version for page in cached):
             return cached
         provider_file = self._literature.open_pdf(paper_id)
         data = bytearray()
@@ -180,7 +183,7 @@ class PaperContextBuilder:
                 paper_id=paper_id,
                 page_number=number,
                 text=text,
-                extractor_version=EXTRACTOR_VERSION,
+                extractor_version=extractor_version,
                 created_at=now,
                 updated_at=now,
             )

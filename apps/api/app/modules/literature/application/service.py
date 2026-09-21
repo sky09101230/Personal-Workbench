@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import re
 import time
 
-from app.modules.literature.application.ports import LiteratureCache, LiteratureProvider
+from app.modules.literature.application.ports import LiteratureCache, LiteratureProvider, LiteratureFileStore
 from app.modules.literature.application.errors import LiteratureError, LiteratureResourceNotFoundError, PdfUnavailableError
 from app.modules.literature.domain.models import (
     Attachment,
@@ -42,6 +42,7 @@ class SyncResult:
 class LiteratureService:
     provider: LiteratureProvider
     cache: LiteratureCache | None = None
+    files: LiteratureFileStore | None = None
 
     def status(self) -> dict[str, object]:
         state = self._library_state()
@@ -70,6 +71,7 @@ class LiteratureService:
         year: int | None = None,
         journal: str | None = None,
         tag: str | None = None,
+        reading_status: str | None = None,
     ) -> PaperPage:
         if self.cache:
             return self.cache.list_papers(
@@ -81,6 +83,7 @@ class LiteratureService:
                 year=year,
                 journal=journal,
                 tag=tag,
+                **({"reading_status": reading_status} if reading_status else {}),
             )
         return self.provider.list_papers(
             collection_id=collection_id,
@@ -105,8 +108,13 @@ class LiteratureService:
     def list_filter_options(self) -> FilterOptions:
         return self.cache.list_filter_options() if self.cache else FilterOptions()
 
-    def open_pdf(self, paper_id: str, *, range_header: str | None = None) -> ProviderFile:
+    def primary_attachment(self, paper_id: str) -> Attachment:
         attachments = self.list_attachments(paper_id)
+        preferred = self.get_paper(paper_id).paper.primary_asset_id
+        if preferred:
+            selected = next((a for a in attachments if a.id == preferred and a.downloadable and a.content_type == "application/pdf"), None)
+            if selected:
+                return selected
         attachment = min(
             (
                 item
@@ -118,6 +126,17 @@ class LiteratureService:
         )
         if attachment is None:
             raise PdfUnavailableError("No accessible PDF attachment is available")
+        return attachment
+
+    def open_pdf(self, paper_id: str, *, range_header: str | None = None, asset_id: str | None = None) -> ProviderFile:
+        if asset_id:
+            attachment = next((a for a in self.list_attachments(paper_id) if a.id == asset_id and a.downloadable), None)
+            if attachment is None:
+                raise PdfUnavailableError("Asset unavailable for this paper")
+        else:
+            attachment = self.primary_attachment(paper_id)
+        if attachment.storage_kind == "local" and self.files:
+            return self.files.open(attachment, range_header=range_header)
         return self.provider.open_attachment(attachment, range_header=range_header)
 
     def sync(self, *, page_size: int = 100) -> SyncResult:
@@ -277,9 +296,9 @@ def _latest_version(*versions: str | None) -> str | None:
         return candidates[-1]
 
 
-def _pdf_attachment_priority(attachment: Attachment) -> tuple[bool, str, str]:
+def _pdf_attachment_priority(attachment: Attachment) -> tuple[int, str, str]:
     return (
-        bool(_SUPPLEMENTARY_PDF_PATTERN.search(attachment.filename)),
+        2 if attachment.role == "supplementary" or _SUPPLEMENTARY_PDF_PATTERN.search(attachment.filename) else 1 if attachment.role == "preprint" else 0,
         attachment.filename.casefold(),
         attachment.id,
     )

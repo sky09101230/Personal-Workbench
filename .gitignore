@@ -15,6 +15,7 @@ dist/
 
 *.db
 *.sqlite3
+data/literature-assets/
 
 .DS_Store
 

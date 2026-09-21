@@ -63,7 +63,7 @@ class LiteratureAIService:
         *,
         analysis_type: str | None = None,
     ) -> tuple[LiteratureAIAnalysis, ...]:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         if analysis_type is not None and not _valid_analysis_type(analysis_type):
             raise ValueError("Unsupported analysis type")
         return self.repository.list_analyses(paper_id, analysis_type=analysis_type)
@@ -77,7 +77,7 @@ class LiteratureAIService:
     ) -> LiteratureAIAnalysis:
         if analysis_type not in ANALYSIS_TYPES:
             raise ValueError("Unsupported analysis type")
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         existing = self.repository.list_analyses(paper_id, analysis_type=analysis_type)
         if existing and not regenerate:
             return existing[0]
@@ -111,7 +111,7 @@ class LiteratureAIService:
         return analysis
 
     def create_conversation(self, paper_id: str) -> LiteratureAIConversation:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         now = self.clock()
         conversation = LiteratureAIConversation(
             id=self.id_factory(),
@@ -123,7 +123,7 @@ class LiteratureAIService:
         return conversation
 
     def list_conversations(self, paper_id: str) -> tuple[LiteratureAIConversation, ...]:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         return self.repository.list_conversations(paper_id)
 
     def list_messages(
@@ -131,6 +131,7 @@ class LiteratureAIService:
         paper_id: str,
         conversation_id: str,
     ) -> tuple[LiteratureAIMessage, ...]:
+        paper_id = self.literature.get_paper(paper_id).paper.id
         self._conversation(paper_id, conversation_id)
         return self.repository.list_messages(conversation_id)
 
@@ -141,6 +142,7 @@ class LiteratureAIService:
         *,
         question: str,
     ) -> tuple[LiteratureAIMessage, LiteratureAIMessage]:
+        paper_id = self.literature.get_paper(paper_id).paper.id
         self._conversation(paper_id, conversation_id)
         existing = self.repository.list_messages(conversation_id)
         context = self.context.build_ask_context(
@@ -190,7 +192,7 @@ class LiteratureAIService:
     ) -> LiteratureAIAnalysis:
         if action not in SELECTION_ACTIONS:
             raise ValueError("Unsupported selection action")
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         prompt = selection_prompt(action)
         context = self.context.build_selection_context(
             paper_id,
@@ -230,11 +232,11 @@ class LiteratureAIService:
         raise RuntimeError("AI retry loop exhausted")
 
     def list_user_notes(self, paper_id: str) -> tuple[LiteratureUserNote, ...]:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         return self.repository.list_user_notes(paper_id)
 
     def create_manual_note(self, paper_id: str, content: str) -> LiteratureUserNote:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         return self._save_note(paper_id, content, "manual")
 
     def add_analysis_to_notes(
@@ -242,7 +244,7 @@ class LiteratureAIService:
         paper_id: str,
         analysis_id: str,
     ) -> LiteratureUserNote:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         analysis = self.repository.get_analysis(analysis_id)
         if analysis is None or analysis.paper_id != paper_id:
             raise LiteratureAIResourceNotFoundError("AI analysis was not found")
@@ -257,7 +259,7 @@ class LiteratureAIService:
         paper_id: str,
         message_id: str,
     ) -> LiteratureUserNote:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         message = self.repository.get_message(message_id)
         if message is None or message.role != "assistant":
             raise LiteratureAIResourceNotFoundError("AI message was not found")
@@ -271,7 +273,7 @@ class LiteratureAIService:
         paper_id: str,
         conversation_id: str,
     ) -> LiteratureAIConversation:
-        self.literature.get_paper(paper_id)
+        paper_id = self.literature.get_paper(paper_id).paper.id
         conversation = self.repository.get_conversation(conversation_id)
         if conversation is None or conversation.paper_id != paper_id:
             raise LiteratureAIResourceNotFoundError("AI conversation was not found")

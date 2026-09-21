@@ -70,6 +70,9 @@ class NewsService:
     def latest_literature_radar(self) -> PaperResearchRadarRun | None:
         return self.repository.latest_literature_radar()
 
+    def export_recommendation(self, recommendation_id: str) -> dict[str, object] | None:
+        return self.repository.export_recommendation(recommendation_id)
+
     def update_paper_research_review(
         self,
         recommendation_id: str,

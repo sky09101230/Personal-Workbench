@@ -81,6 +81,7 @@ def list_papers(
     year: int | None = None,
     journal: str | None = None,
     tag: str | None = None,
+    reading_status: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     service: LiteratureService = Depends(get_literature_service),
@@ -95,6 +96,7 @@ def list_papers(
             year=year,
             journal=journal,
             tag=tag,
+            reading_status=reading_status,
         )
         return {
             "items": [asdict(paper) for paper in page.items],
@@ -160,19 +162,21 @@ def list_attachments(
 @router.get("/papers/{paper_id}/pdf")
 def stream_pdf(
     paper_id: str,
+    asset_id: str | None = None,
     range_header: Annotated[str | None, Header(alias="Range")] = None,
     service: LiteratureService = Depends(get_literature_service),
 ) -> StreamingResponse:
-    return _pdf_response(paper_id, range_header, False, service)
+    return _pdf_response(paper_id, range_header, False, service, asset_id)
 
 
 @router.get("/papers/{paper_id}/pdf/download")
 def download_pdf(
     paper_id: str,
+    asset_id: str | None = None,
     range_header: Annotated[str | None, Header(alias="Range")] = None,
     service: LiteratureService = Depends(get_literature_service),
 ) -> StreamingResponse:
-    return _pdf_response(paper_id, range_header, True, service)
+    return _pdf_response(paper_id, range_header, True, service, asset_id)
 
 
 def _pdf_response(
@@ -180,9 +184,10 @@ def _pdf_response(
     range_header: str | None,
     download: bool,
     service: LiteratureService,
+    asset_id: str | None = None,
 ) -> StreamingResponse:
     try:
-        provider_file = service.open_pdf(paper_id, range_header=range_header)
+        provider_file = service.open_pdf(paper_id, range_header=range_header, **({"asset_id": asset_id} if asset_id else {}))
     except LiteratureError as error:
         raise _http_error(error) from error
     disposition = "attachment" if download else "inline"

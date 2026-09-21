@@ -522,6 +522,34 @@ class SQLiteNewsRepository:
             offset=offset,
         )
 
+    def export_recommendation(self, recommendation_id: str) -> dict[str, object] | None:
+        """Export persisted discovery evidence without knowing any consuming module."""
+        from contextlib import closing
+
+        self.ensure_schema()
+        with closing(sqlite3.connect(self._database_path)) as connection:
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                "SELECT p.* FROM news_papers p JOIN news_paper_research_recommendations r ON r.paper_id=p.id WHERE r.id=?",
+                (recommendation_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            paper = dict(row)
+            paper["authors"] = json.loads(paper.pop("authors_json"))
+            appearances = []
+            for record in connection.execute(
+                "SELECT r.*,u.generated_at,u.run_key,u.task_key FROM news_paper_research_recommendations r JOIN news_paper_research_runs u ON u.id=r.run_id WHERE r.paper_id=? ORDER BY u.generated_at,r.id",
+                (paper["id"],),
+            ):
+                appearance = dict(record)
+                appearance["recommendation_id"] = appearance.pop("id")
+                for key in list(appearance):
+                    if key.endswith("_json"):
+                        appearance[key.removesuffix("_json")] = json.loads(appearance.pop(key))
+                appearances.append(appearance)
+        return {"paper": paper, "appearances": appearances}
+
     def latest_literature_radar(self) -> PaperResearchRadarRun | None:
         self.ensure_schema()
         with sqlite3.connect(self._database_path) as connection:

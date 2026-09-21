@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from uuid import uuid4
+from pathlib import Path
 
 from app.core.config import settings
 from app.core.observability import request_id_var
@@ -15,7 +16,10 @@ from app.modules.literature.infrastructure.ai.deepseek_provider import (
     DeepSeekLiteratureAIProvider,
 )
 from app.modules.literature.infrastructure.ai.paper_context import PaperContextBuilder
-from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository
+from app.modules.literature.infrastructure.cache.canonical import SQLiteCanonicalRepository
+from app.modules.literature.infrastructure.files import LocalLiteratureFiles
+from app.modules.literature.application.ingestion import LiteratureIngestionService
+from app.modules.literature.presentation.library_router import router as canonical_library_router
 from app.modules.literature.infrastructure.providers.zotero.provider import ZoteroWebProvider
 from app.modules.literature.presentation.ai_router import router as literature_ai_router
 from app.modules.literature.presentation.router import router as literature_router
@@ -66,10 +70,12 @@ def create_app() -> FastAPI:
     )
 
     # Composition is kept here so presentation code does not know the provider implementation.
-    literature_repository = SQLiteLiteratureRepository(settings.database_url)
+    literature_repository = SQLiteCanonicalRepository(settings.database_url)
+    literature_files = LocalLiteratureFiles(str(Path(settings.database_url.removeprefix("sqlite:///")).parent / "literature-assets"))
     literature_service = LiteratureService(
         ZoteroWebProvider(settings),
         literature_repository,
+        literature_files,
     )
     app.state.literature_service = literature_service
     app.state.literature_ai_service = LiteratureAIService(
@@ -90,6 +96,9 @@ def create_app() -> FastAPI:
     app.state.project_activity_service = ProjectActivityService(
         repository=SQLiteProjectActivityRepository(settings.database_url),
     )
+    app.state.literature_ingestion_service = LiteratureIngestionService(
+        literature_repository, literature_files, app.state.news_service.export_recommendation,
+    )
     app.state.project_activity_agent_token = settings.workbench_agent_token
     app.state.todo_service = TodoService(
         repository=SQLiteTodoRepository(settings.database_url),
@@ -103,6 +112,7 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": "workbench-api"}
 
     app.include_router(literature_router, prefix="/api/literature", tags=["literature"])
+    app.include_router(canonical_library_router, prefix="/api/literature", tags=["literature-library"])
     app.include_router(
         literature_ai_router,
         prefix="/api/literature",

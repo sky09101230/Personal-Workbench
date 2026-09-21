@@ -30,6 +30,9 @@ class NewsSummarizerPort(Protocol):
 
 
 class NewsRepository(Protocol):
+    def export_recommendation(self, recommendation_id: str) -> dict[str, object] | None:
+        ...
+
     def ingest_paper_research(
         self,
         payload: PaperResearchIngest,

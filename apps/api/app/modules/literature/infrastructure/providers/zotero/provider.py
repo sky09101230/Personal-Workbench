@@ -423,6 +423,7 @@ class ZoteroWebProvider:
                 data.get("bookTitle"),
             ),
             doi=self._optional_string(data.get("DOI")),
+            date_evidence={"published": self._optional_string(data.get("date"))},
             tags=tuple(
                 tag["tag"]
                 for tag in data.get("tags", [])
@@ -481,6 +482,7 @@ class ZoteroWebProvider:
                 and link_mode in {"imported_file", "imported_url"}
             ),
             link_mode=link_mode,
+            content_version=str(record.get("version") or data.get("version") or ""),
             external_ref=reference,
         )
 

@@ -11,7 +11,7 @@ from app.modules.literature.domain.ai_models import (
     LiteratureAIMessage,
     LiteratureAIPaperTextPage,
 )
-from app.modules.literature.domain.models import Paper, PaperDetail, ProviderFile
+from app.modules.literature.domain.models import Attachment, Paper, PaperDetail, ProviderFile
 from app.modules.literature.infrastructure.ai import paper_context
 from app.modules.literature.infrastructure.ai.paper_context import PaperContextBuilder
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository
@@ -24,6 +24,9 @@ NOW = "2026-08-28T00:00:00+00:00"
 class _Literature:
     paper: Paper
     pdf: bytes | None = None
+
+    def primary_attachment(self, paper_id: str) -> Attachment:
+        return Attachment("test-asset", paper_id, "paper.pdf", "application/pdf", True)
 
     def get_paper(self, paper_id: str) -> PaperDetail:
         assert paper_id == self.paper.id
@@ -132,7 +135,7 @@ def test_context_builder_replaces_stale_extractor_cache(tmp_path, monkeypatch) -
 
     assert context.payload["pages"] == [{"page_number": 1, "text": "main paper text"}]
     assert cached[0].text == "main paper text"
-    assert cached[0].extractor_version == paper_context.EXTRACTOR_VERSION
+    assert cached[0].extractor_version == paper_context.EXTRACTOR_VERSION + ":test-asset:"
 
 
 def test_context_builder_marks_empty_pdf_as_unavailable(tmp_path, monkeypatch) -> None:
@@ -313,7 +316,7 @@ def _page(number: int, text: str) -> LiteratureAIPaperTextPage:
         paper_id="paper-1",
         page_number=number,
         text=text,
-        extractor_version=paper_context.EXTRACTOR_VERSION,
+        extractor_version=paper_context.EXTRACTOR_VERSION + ":test-asset:",
         created_at=NOW,
         updated_at=NOW,
     )
