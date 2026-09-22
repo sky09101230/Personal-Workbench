@@ -42,6 +42,12 @@ class PdfUnavailableError(LiteratureError):
     pass
 
 
+class LocalAssetError(PdfUnavailableError):
+    def __init__(self, state: str) -> None:
+        super().__init__(f"Local asset {state}")
+        self.state = state
+
+
 class LiteratureAIError(LiteratureError):
     """Expected failures at the Literature AI boundary."""
 

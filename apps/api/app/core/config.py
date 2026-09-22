@@ -17,6 +17,7 @@ class Settings:
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
     workbench_agent_token: str = ""
+    literature_vault_root: str = ""
 
     @property
     def zotero_configured(self) -> bool:
@@ -45,6 +46,7 @@ def load_settings() -> Settings:
             or "deepseek-v4-flash"
         ),
         workbench_agent_token=os.getenv("WORKBENCH_AGENT_TOKEN", "").strip(),
+        literature_vault_root=os.getenv("LITERATURE_VAULT_ROOT", "").strip(),
     )
 
 

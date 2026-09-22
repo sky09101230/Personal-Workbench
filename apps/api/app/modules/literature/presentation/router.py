@@ -13,6 +13,7 @@ from app.modules.literature.application.errors import (
     LiteratureError,
     LiteratureResourceNotFoundError,
     PdfUnavailableError,
+    LocalAssetError,
     MigrationRequiredError,
     ProviderAuthenticationError,
     ProviderNotConfiguredError,
@@ -144,6 +145,14 @@ def list_notes(
         raise _http_error(error) from error
 
 
+@router.get("/papers/{paper_id}/assets/integrity")
+def asset_integrity(paper_id: str, service: LiteratureService = Depends(get_literature_service)):
+    try:
+        return {"items": [asdict(result) for result in service.asset_integrity(paper_id)]}
+    except LiteratureError as error:
+        raise _http_error(error) from error
+
+
 @router.get("/papers/{paper_id}/attachments")
 def list_attachments(
     paper_id: str,
@@ -235,5 +244,7 @@ def _http_error(error: LiteratureError) -> HTTPException:
     if isinstance(error, LiteratureResourceNotFoundError):
         return HTTPException(status_code=404, detail={"code": "paper_not_found"})
     if isinstance(error, PdfUnavailableError):
+        if isinstance(error, LocalAssetError):
+            return HTTPException(status_code=409 if error.state in {"corrupt", "invalid"} else 404, detail={"code": "local_asset_" + error.state})
         return HTTPException(status_code=404, detail={"code": "pdf_unavailable"})
     return HTTPException(status_code=502, detail={"code": "provider_unavailable"})

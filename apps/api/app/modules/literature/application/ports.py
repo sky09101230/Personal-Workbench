@@ -3,6 +3,7 @@ from typing import Protocol
 
 from app.modules.literature.domain.models import (
     Attachment,
+    AssetIntegrity,
     Collection,
     FilterOptions,
     LibraryChanges,
@@ -126,6 +127,7 @@ class CanonicalLibrary(LiteratureCache, Protocol):
 
 
 class LiteratureFileStore(Protocol):
+    def inspect(self, asset: Attachment) -> AssetIntegrity: ...
     def store_pdf(self, data: bytes, filename: str) -> tuple[str, str]: ...
     def stage_pdf(self, data: bytes, filename: str) -> tuple[str, str]: ...
     def finalize_pdf(self, staging_key: str, sha256_hex: str, *, keep_staging: bool = False) -> str: ...

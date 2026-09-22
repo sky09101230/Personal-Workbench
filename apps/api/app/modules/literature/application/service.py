@@ -4,9 +4,10 @@ import re
 import time
 
 from app.modules.literature.application.ports import LiteratureCache, LiteratureProvider, LiteratureFileStore
-from app.modules.literature.application.errors import LiteratureError, LiteratureResourceNotFoundError, PdfUnavailableError
+from app.modules.literature.application.errors import LiteratureError, LiteratureResourceNotFoundError, PdfUnavailableError, LocalAssetError
 from app.modules.literature.domain.models import (
     Attachment,
+    AssetIntegrity,
     Collection,
     FilterOptions,
     LibraryChanges,
@@ -137,7 +138,15 @@ class LiteratureService:
             attachment = self.primary_attachment(paper_id)
         if attachment.storage_kind == "local" and self.files:
             return self.files.open(attachment, range_header=range_header)
+        if attachment.storage_kind != "zotero":
+            raise LocalAssetError("unsupported_backend")
         return self.provider.open_attachment(attachment, range_header=range_header)
+
+    def asset_integrity(self, paper_id: str) -> tuple[AssetIntegrity, ...]:
+        return tuple(
+            self.files.inspect(asset) if self.files else AssetIntegrity(asset.id, "remote_only" if asset.storage_kind == "zotero" else "unsupported_backend")
+            for asset in self.list_attachments(paper_id)
+        )
 
     def sync(self, *, page_size: int = 100) -> SyncResult:
         state = self._library_state()

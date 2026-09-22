@@ -81,7 +81,7 @@ def create_app() -> FastAPI:
 
     # Composition is kept here so presentation code does not know the provider implementation.
     literature_repository = SQLiteLiteratureWorkflowRepository(settings.database_url)
-    literature_files = LocalLiteratureFiles(str(Path(settings.database_url.removeprefix("sqlite:///")).parent / "literature-assets"))
+    literature_files = LocalLiteratureFiles(settings.literature_vault_root or str(Path(settings.database_url.removeprefix("sqlite:///")).parent / "literature-assets"))
     literature_service = LiteratureService(
         ZoteroWebProvider(settings),
         literature_repository,

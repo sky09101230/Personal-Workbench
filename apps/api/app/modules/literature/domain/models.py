@@ -72,6 +72,14 @@ class Attachment:
 
 
 @dataclass(frozen=True)
+class AssetIntegrity:
+    asset_id: str
+    state: str
+    size_bytes: int | None = None
+    sha256: str | None = None
+
+
+@dataclass(frozen=True)
 class LiteratureAssets:
     notes: tuple[Note, ...] = ()
     attachments: tuple[Attachment, ...] = ()
