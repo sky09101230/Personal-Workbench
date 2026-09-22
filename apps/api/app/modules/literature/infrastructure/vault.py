@@ -4,7 +4,6 @@ import argparse
 from collections import Counter
 from contextlib import closing
 from dataclasses import asdict
-from hashlib import sha256
 import json
 from pathlib import Path
 import sqlite3
@@ -74,16 +73,19 @@ def inspect_vault(database, root, *, copy_to=None, apply=False):
                 raise LocalAssetError(previous.state)
             else:
                 opened = files.open(asset)
+                staged = None
                 try:
-                    data = b"".join(opened.chunks)
+                    staged = destination.stage_source_pdf(opened.chunks, asset.filename)
+                    if staged.sha256 != asset.storage_key[:-4]:
+                        raise LocalAssetError("corrupt")
+                    key = destination.finalize_pdf(staged.staging_key, staged.sha256)
+                    if key != asset.storage_key or destination.inspect(asset).state != "verified":
+                        raise LocalAssetError("corrupt")
                 finally:
                     if opened.close:
                         opened.close()
-                if sha256(data).hexdigest() != asset.storage_key[:-4]:
-                    raise LocalAssetError("corrupt")
-                key, digest = destination.store_pdf(data, asset.filename)
-                if key != asset.storage_key or digest != asset.storage_key[:-4] or destination.inspect(asset).state != "verified":
-                    raise LocalAssetError("corrupt")
+                    if staged:
+                        destination.discard_staged(staged.staging_key)
                 outcome = "copied_verified"
             report["copies"].append({"asset_id": asset_id, "status": outcome})
         except (LocalAssetError, OSError, ValueError) as error:

@@ -17,8 +17,10 @@ from app.modules.literature.domain.models import (
     Note, Paper, PaperDetail, PaperPage,
 )
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository, SchemaVersion
-from app.modules.literature.application.errors import MigrationRequiredError
+from app.modules.literature.application.errors import MigrationRequiredError, WorkflowConflictError
 from app.modules.literature.domain.workflow import METADATA_FIELDS, metadata_patch, metadata_snapshot
+
+_WORKFLOW_SCHEMA_VERSION = 5
 
 
 _SCHEMA = (
@@ -44,6 +46,7 @@ _SCHEMA = (
     "CREATE TABLE literature_proposal_evidence (proposal_id TEXT NOT NULL REFERENCES literature_metadata_proposals(id), evidence_id TEXT NOT NULL REFERENCES literature_metadata_evidence(id), PRIMARY KEY(proposal_id,evidence_id))",
     "CREATE TABLE literature_conflict_reviews (id TEXT PRIMARY KEY, conflict_id TEXT NOT NULL REFERENCES literature_identity_conflicts(id), decision TEXT NOT NULL, reason TEXT NOT NULL, context_json TEXT NOT NULL, created_at TEXT NOT NULL)",
     "CREATE TABLE literature_paper_versions (id TEXT PRIMARY KEY, preprint_id TEXT NOT NULL REFERENCES literature_documents(id), published_id TEXT NOT NULL REFERENCES literature_documents(id), status TEXT NOT NULL, evidence_json TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(preprint_id,published_id))",
+    "CREATE TABLE literature_asset_copies (source_asset_id TEXT PRIMARY KEY REFERENCES literature_assets(id), source_snapshot_json TEXT NOT NULL, observed_snapshot_json TEXT NOT NULL, asset_id TEXT NOT NULL REFERENCES literature_assets(id), sha256 TEXT NOT NULL, copied_at TEXT NOT NULL)",
     # Indexes
     "CREATE INDEX literature_assets_paper_idx ON literature_assets(paper_id)",
     "CREATE INDEX literature_origins_paper_idx ON literature_origins(paper_id)",
@@ -127,12 +130,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
 
     def ensure_schema(self) -> SchemaVersion:
         if self._schema_ready:
-            return SchemaVersion(4)
+            return SchemaVersion(_WORKFLOW_SCHEMA_VERSION)
         upgrade_backup = None
         if Path(self._database_path).is_file():
             with closing(sqlite3.connect(Path(self._database_path).resolve().as_uri() + "?mode=ro", uri=True)) as probe:
                 tables = {row[0] for row in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if "literature_documents" in tables and ("literature_workflow_schema" not in tables or not probe.execute("SELECT 1 FROM literature_workflow_schema WHERE version=4").fetchone()):
+                if "literature_documents" in tables and ("literature_workflow_schema" not in tables or not probe.execute("SELECT 1 FROM literature_workflow_schema WHERE version=?", (_WORKFLOW_SCHEMA_VERSION,)).fetchone()):
                     upgrade_backup = backup_database(self._database_path)
         super().ensure_schema()
         with self._connect() as c:
@@ -143,12 +146,10 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("CREATE TABLE IF NOT EXISTS literature_state_edits (paper_id TEXT PRIMARY KEY, edited_at TEXT NOT NULL)")
             c.execute("CREATE TABLE IF NOT EXISTS literature_maintenance_actions (name TEXT PRIMARY KEY, report_json TEXT NOT NULL, applied_at TEXT NOT NULL)")
             c.execute("INSERT OR IGNORE INTO literature_workflow_schema VALUES (2,?)", (_now(),))
-            if not c.execute("SELECT 1 FROM literature_workflow_schema WHERE version=3").fetchone():
-                c.execute("INSERT INTO literature_workflow_schema VALUES (3,?)", (_now(),))
-                c.execute("INSERT OR IGNORE INTO literature_maintenance_actions VALUES ('metadata_evidence_schema',?,?)", (_json({"schema_version": 3, "backup": upgrade_backup, "canonical_values_changed": 0}), _now()))
-            if not c.execute("SELECT 1 FROM literature_workflow_schema WHERE version=4").fetchone():
-                c.execute("INSERT INTO literature_workflow_schema VALUES (4,?)", (_now(),))
-                c.execute("INSERT OR IGNORE INTO literature_maintenance_actions VALUES ('identity_review_schema',?,?)", (_json({"schema_version": 4, "backup": upgrade_backup, "canonical_values_changed": 0}), _now()))
+            for version, name in ((3, 'metadata_evidence_schema'), (4, 'identity_review_schema'), (5, 'owned_assets_schema')):
+                if not c.execute('SELECT 1 FROM literature_workflow_schema WHERE version=?', (version,)).fetchone():
+                    c.execute('INSERT INTO literature_workflow_schema VALUES (?,?)', (version, _now()))
+                    c.execute('INSERT OR IGNORE INTO literature_maintenance_actions VALUES (?,?,?)', (name, _json({'schema_version': version, 'backup': upgrade_backup, 'canonical_values_changed': 0}), _now()))
             migrated = c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone()
             if not migrated and not self._has_legacy(c):
                 report = self._report(c)
@@ -156,7 +157,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 report["fresh"] = True
                 c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
         self._schema_ready = True
-        return SchemaVersion(4)
+        return SchemaVersion(_WORKFLOW_SCHEMA_VERSION)
 
     def run_migration(self, *, dry_run: bool = False) -> dict:
         # Copy before ensure_schema: dry-run is read-only even on legacy v1/v2 databases.
@@ -175,12 +176,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("BEGIN IMMEDIATE")
             row = c.execute("SELECT report_json FROM literature_canonical_migrations WHERE version=1").fetchone()
             if row:
-                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False, "workflow_schema_version": 4}
+                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False, "workflow_schema_version": _WORKFLOW_SCHEMA_VERSION}
             self._migrate(c)
             report = self._report(c)
             report["backup"] = backup
             c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
-        return {"status": "migrated", "report": report, "dry_run": False, "workflow_schema_version": 4}
+        return {"status": "migrated", "report": report, "dry_run": False, "workflow_schema_version": _WORKFLOW_SCHEMA_VERSION}
 
     def _require_canonical(self):
         if self.migration_required:
@@ -482,6 +483,37 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 if asset.sha256 and existing.sha256 == asset.sha256 and existing.role == asset.role:
                     return existing
             return self._asset(c, asset)
+
+    def owned_asset(self, source: Attachment, *, require_current_source=True):
+        self._require_canonical()
+        with self._connect() as c:
+            row = c.execute('SELECT a.payload_json,m.source_snapshot_json FROM literature_asset_copies m JOIN literature_assets a ON a.id=m.asset_id WHERE m.source_asset_id=? AND a.paper_id=? AND a.active=1', (source.id, source.paper_id)).fetchone()
+            if not row or (require_current_source and row[1] != _json(asdict(source))):
+                return None
+            return _attachment(json.loads(row[0]))
+
+    def record_owned_asset(self, source, asset, observed, size_bytes):
+        self._require_canonical()
+        with self._connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT payload_json,active FROM literature_assets WHERE id=? AND paper_id=?', (source.id, source.paper_id)).fetchone()
+            if not row or asdict(replace(_attachment(json.loads(row[0])), active=bool(row[1]))) != asdict(source):
+                raise WorkflowConflictError('Source descriptor changed; generate a new acquisition plan')
+            if source.storage_kind != 'zotero' or not source.active or asset.paper_id != source.paper_id or asset.storage_kind == 'zotero' or not asset.sha256:
+                raise ValueError('Invalid owned asset association')
+            saved = None
+            for existing in c.execute('SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1', (source.paper_id,)):
+                candidate = _attachment(json.loads(existing[0]))
+                if (candidate.storage_kind, candidate.storage_key, candidate.sha256, candidate.role) == (asset.storage_kind, asset.storage_key, asset.sha256, source.role):
+                    saved = candidate
+                    break
+            saved = saved or self._asset(c, replace(asset, role=source.role))
+            now = _now()
+            c.execute('INSERT INTO literature_asset_copies VALUES (?,?,?,?,?,?) ON CONFLICT(source_asset_id) DO UPDATE SET source_snapshot_json=excluded.source_snapshot_json,observed_snapshot_json=excluded.observed_snapshot_json,asset_id=excluded.asset_id,sha256=excluded.sha256,copied_at=excluded.copied_at', (source.id, _json(asdict(source)), _json(asdict(observed)), saved.id, saved.sha256, now))
+            evidence = {'method': 'verified_asset_acquisition', 'source_asset': source.id, 'source_snapshot': asdict(source), 'observed_snapshot': asdict(observed), 'owned_asset': saved.id, 'sha256': saved.sha256, 'size_bytes': size_bytes}
+            origin_key = _id('acquisition', _json(evidence))
+            c.execute("INSERT OR IGNORE INTO literature_origins VALUES ('zotero_materialization',?,?,?,?)", (origin_key, source.paper_id, _json(evidence), now))
+            return saved
 
     def replace_library(self, *, provider, library_id, collections, papers, collection_papers, notes, attachments, library_version):
         from app.modules.literature.domain.models import ChangedPaper

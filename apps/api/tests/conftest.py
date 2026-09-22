@@ -11,6 +11,7 @@ _temporary_root.mkdir(parents=True, exist_ok=True)
 _application = tempfile.TemporaryDirectory(prefix='pytest-app-', dir=_temporary_root, ignore_cleanup_errors=True)
 os.environ['DATABASE_URL'] = f'sqlite:///{Path(_application.name) / "workbench.db"}'
 os.environ['LITERATURE_VAULT_ROOT'] = str(Path(_application.name) / 'vault')
+os.environ['ZOTERO_DATA_DIR'] = ''
 for _key in ('ZOTERO_USER_ID', 'ZOTERO_API_KEY', 'OPENALEX_API_KEY', 'DEEPSEEK_API_KEY', 'WORKBENCH_AGENT_TOKEN'):
     os.environ[_key] = ''
 

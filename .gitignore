@@ -16,6 +16,7 @@ dist/
 *.db
 *.sqlite3
 data/literature-assets/
+data/literature-migration-reports/
 
 .DS_Store
 

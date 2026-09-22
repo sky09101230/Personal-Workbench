@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "apps/api"))
 session = Path(tempfile.mkdtemp(prefix="frontend-stage3-", dir=ROOT / ".venv/tmp"))
 os.environ["DATABASE_URL"] = f"sqlite:///{session / 'acceptance.db'}"
 os.environ["LITERATURE_VAULT_ROOT"] = str(session / 'vault')
+os.environ['ZOTERO_DATA_DIR'] = ''
 for name in ("ZOTERO_USER_ID", "ZOTERO_API_KEY", "DEEPSEEK_API_KEY", "OPENALEX_API_KEY", "WORKBENCH_AGENT_TOKEN"):
     os.environ[name] = ""
 
@@ -70,6 +71,9 @@ class Connector:
 
     def open_attachment(self, asset, **kwargs):
         return ProviderFile(asset.filename, "application/pdf", (pdf("Connector PDF"),))
+
+    def describe_attachment(self, asset):
+        return replace(asset, paper_id=asset.source_paper_id or asset.paper_id, content_version=asset.content_version or 'fixture-version')
 
 
 literature = app.state.literature_service

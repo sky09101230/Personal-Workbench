@@ -89,5 +89,5 @@ Real migration uses SQLite online backup, independent file copies, verified chec
 - [x] Change 2 accepted and committed: `harden-literature-vault`; 238 backend tests; on-disk relocation/replay and offline Reader acceptance on a real DB backup. Real assets remain remote-only pending Change 4.
 - [x] Change 3a accepted and committed: `review-literature-metadata-evidence`; 243 tests, frontend build, browser decisions and real-backup upgrade rehearsal. An existing unisolated status test triggered backed-up live additive DDL; only schema/maintenance ledgers changed and pytest startup is now isolated. See acceptance.md.
 - [x] Change 3b accepted and committed: `review-literature-identity-and-versions`; 253 tests, build/browser decisions and version-4 real-copy preservation. No live identity decisions or source-byte acquisition yet.
-- [ ] Change 4 accepted and committed.
+- [x] Change 4 available-asset migration accepted and committed: `acquire-literature-owned-assets`; 264 tests; 49 source mappings into 47 verified objects (about 276 MiB), 44 default Readers offline, all original rows retained. 38 source PDFs remain unavailable (21 papers without another owned primary), plus eight unassigned descriptors; backup/exception handling remains explicit Goal work.
 - [ ] Change 5 accepted; final Goal gaps reviewed and closed.

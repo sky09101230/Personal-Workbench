@@ -112,16 +112,24 @@ class LiteratureService:
     def primary_attachment(self, paper_id: str) -> Attachment:
         attachments = self.list_attachments(paper_id)
         preferred = self.get_paper(paper_id).paper.primary_asset_id
+        owned_lookup = getattr(self.cache, 'owned_asset', None)
         if preferred:
-            selected = next((a for a in attachments if a.id == preferred and a.downloadable and a.content_type == "application/pdf"), None)
+            selected = next((a for a in attachments if a.id == preferred and a.content_type == "application/pdf"), None)
             if selected:
-                return selected
+                if selected.storage_kind == 'zotero' and owned_lookup:
+                    owned = owned_lookup(selected, require_current_source=False)
+                    if owned:
+                        return owned
+                if selected.downloadable:
+                    return selected
+        eligible = [item for item in attachments if item.downloadable and item.content_type == 'application/pdf']
+        source = min((item for item in eligible if item.storage_kind == 'zotero'), key=_pdf_attachment_priority, default=None)
+        if source and owned_lookup and _pdf_attachment_priority(source)[0] == min(_pdf_attachment_priority(item)[0] for item in eligible):
+            owned = owned_lookup(source, require_current_source=False)
+            if owned:
+                return owned
         attachment = min(
-            (
-                item
-                for item in attachments
-                if item.downloadable and item.content_type == "application/pdf"
-            ),
+            eligible,
             key=_pdf_attachment_priority,
             default=None,
         )
@@ -136,9 +144,9 @@ class LiteratureService:
                 raise PdfUnavailableError("Asset unavailable for this paper")
         else:
             attachment = self.primary_attachment(paper_id)
-        if attachment.storage_kind == "local" and self.files:
-            return self.files.open(attachment, range_header=range_header)
         if attachment.storage_kind != "zotero":
+            if self.files:
+                return self.files.open(attachment, range_header=range_header)
             raise LocalAssetError("unsupported_backend")
         return self.provider.open_attachment(attachment, range_header=range_header)
 
@@ -305,9 +313,10 @@ def _latest_version(*versions: str | None) -> str | None:
         return candidates[-1]
 
 
-def _pdf_attachment_priority(attachment: Attachment) -> tuple[int, str, str]:
+def _pdf_attachment_priority(attachment: Attachment) -> tuple[int, int, str, str]:
     return (
         2 if attachment.role == "supplementary" or _SUPPLEMENTARY_PDF_PATTERN.search(attachment.filename) else 1 if attachment.role == "preprint" else 0,
+        0 if attachment.storage_kind == 'local' else 1,
         attachment.filename.casefold(),
         attachment.id,
     )

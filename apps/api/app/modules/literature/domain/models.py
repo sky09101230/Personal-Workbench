@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from collections.abc import Callable, Iterable
 
+MAX_SOURCE_PDF_BYTES = 256 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class ExternalReference:
@@ -71,6 +73,18 @@ class Attachment:
     active: bool = True
     content_version: str | None = None
     source_paper_id: str | None = None
+    source_md5: str | None = None
+    source_channel: str | None = None
+    source_locator: str | None = None
+
+
+@dataclass(frozen=True)
+class StagedPdf:
+    staging_key: str
+    sha256: str
+    md5: str
+    size_bytes: int
+    storage_kind: str
 
 
 @dataclass(frozen=True)

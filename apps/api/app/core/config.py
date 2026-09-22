@@ -18,6 +18,7 @@ class Settings:
     deepseek_model: str = "deepseek-v4-flash"
     workbench_agent_token: str = ""
     literature_vault_root: str = ""
+    zotero_data_dir: str = ""
 
     @property
     def zotero_configured(self) -> bool:
@@ -47,6 +48,7 @@ def load_settings() -> Settings:
         ),
         workbench_agent_token=os.getenv("WORKBENCH_AGENT_TOKEN", "").strip(),
         literature_vault_root=os.getenv("LITERATURE_VAULT_ROOT", "").strip(),
+        zotero_data_dir=os.getenv("ZOTERO_DATA_DIR", "").strip(),
     )
 
 

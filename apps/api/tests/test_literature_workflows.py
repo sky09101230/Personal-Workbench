@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from contextlib import closing
 import io
 import os
@@ -26,6 +27,10 @@ from app.modules.literature.infrastructure.files import LocalLiteratureFiles
 from app.modules.literature.infrastructure.extraction import extract_metadata
 from app.modules.literature.infrastructure.providers.zotero.provider import ZoteroWebProvider
 from .test_canonical_api import NoZotero, pdf_bytes
+
+
+def _describe_fixture(source):
+    return replace(source, paper_id=source.source_paper_id or source.paper_id, content_version=source.content_version or 'fixture-version')
 
 
 @pytest.fixture
@@ -221,6 +226,7 @@ def test_selective_import_and_materialization(workflow,override_service):
     p=Paper('zotero:1:ABCDEFGH','A selected Zotero paper',external_ref=ExternalReference('zotero','1','ABCDEFGH'))
     asset=Attachment('zotero:1:FILEKEY1',p.id,'main.pdf','application/pdf',True,external_ref=ExternalReference('zotero','1','FILEKEY1'))
     class Provider(NoZotero):
+        describe_attachment = staticmethod(_describe_fixture)
         closed=0
         calls=0
         def get_import_item(self,key):
@@ -255,6 +261,7 @@ def test_materialization_closes_oversized_stream(workflow):
     canonical=repository.ingest(Ingestion(Paper('source','Oversized file paper'),'zotero_import','source')).paper_id
     repository.add_asset(Attachment('remote',canonical,'main.pdf','application/pdf',True))
     class Large(NoZotero):
+        describe_attachment = staticmethod(_describe_fixture)
         closed=False
         def open_attachment(self,*args,**kwargs):
             return ProviderFile('main.pdf','application/pdf',(),content_length=str(51*1024*1024),close=self.close)
@@ -315,6 +322,7 @@ def test_stream_failure_closes_and_cannot_expose_provider_error(workflow):
     canonical=repository.ingest(Ingestion(Paper('','Interrupted stream example'),'manual','interrupted')).paper_id
     repository.add_asset(Attachment('stream',canonical,'main.pdf','application/pdf',True))
     class Broken(NoZotero):
+        describe_attachment = staticmethod(_describe_fixture)
         closed=False
         def open_attachment(self,*args,**kwargs):
             def chunks():

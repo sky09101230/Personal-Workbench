@@ -82,6 +82,18 @@ class MaterializationResult:
 
 
 @dataclass(frozen=True)
+class AssetAcquisitionResult:
+    source_asset_id: str
+    paper_id: str
+    status: str
+    asset_id: str | None = None
+    sha256: str | None = None
+    size_bytes: int | None = None
+    observed_version: str | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class BatchMaterializationResult:
     """Result of batch PDF materialization."""
     total: int = 0

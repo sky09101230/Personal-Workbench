@@ -1,4 +1,4 @@
-from hashlib import sha256, file_digest
+from hashlib import sha256, file_digest, md5
 import io
 import os
 from pathlib import Path
@@ -7,11 +7,24 @@ import tempfile
 
 from pypdf import PdfReader
 
-from app.modules.literature.application.errors import LocalAssetError
-from app.modules.literature.domain.models import AssetIntegrity, Attachment, ProviderFile
+from app.modules.literature.application.errors import LocalAssetError, PdfSizeLimitError
+from app.modules.literature.domain.models import AssetIntegrity, Attachment, ProviderFile, StagedPdf, MAX_SOURCE_PDF_BYTES
 
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+def _validate_pdf(stream):
+    stream.seek(0)
+    if stream.read(5) != b'%PDF-':
+        raise ValueError('A PDF signature is required')
+    stream.seek(0)
+    try:
+        reader = PdfReader(stream)
+        if reader.is_encrypted or not reader.pages:
+            raise ValueError('Encrypted or empty PDF is unsupported')
+    except Exception as error:
+        raise ValueError('PDF could not be read; encrypted or malformed files are unsupported') from error
 
 
 def _resolved(path: Path) -> Path:
@@ -53,12 +66,7 @@ class LocalLiteratureFiles:
     def stage_pdf(self, data: bytes, filename: str) -> tuple[str, str]:
         if not data or len(data) > MAX_UPLOAD_BYTES or not data.startswith(b"%PDF-"):
             raise ValueError("Upload must be a PDF no larger than 50 MiB")
-        try:
-            reader = PdfReader(io.BytesIO(data))
-            if reader.is_encrypted or not reader.pages:
-                raise ValueError("Encrypted or empty PDF is unsupported")
-        except Exception as error:
-            raise ValueError("PDF could not be read; encrypted or malformed files are unsupported") from error
+        _validate_pdf(io.BytesIO(data))
         digest = sha256(data).hexdigest()
         self._directory(self.staging, create=True)
         import uuid
@@ -81,9 +89,35 @@ class LocalLiteratureFiles:
         return staging_key, digest
 
     def _staged_path(self, staging_key: str) -> Path:
-        if not re.fullmatch(r"[a-f0-9]{32}\.pending", staging_key):
+        if not re.fullmatch(r"[a-f0-9]{32}\.(pending|acquiring)", staging_key):
             raise ValueError("Invalid staging key")
         return self._contained(self.staging / staging_key, self.staging)
+
+    def stage_source_pdf(self, chunks, filename):
+        import uuid
+        self._directory(self.staging, create=True)
+        key = uuid.uuid4().hex + '.acquiring'
+        target = self._staged_path(key)
+        digest, source_hash, size = sha256(), md5(), 0
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=self.staging, suffix='.acquiring', delete=False) as stream:
+                temporary = Path(stream.name)
+                for chunk in chunks:
+                    size += len(chunk)
+                    if size > MAX_SOURCE_PDF_BYTES:
+                        raise PdfSizeLimitError('Source PDF exceeds 256 MiB')
+                    stream.write(chunk)
+                    digest.update(chunk)
+                    source_hash.update(chunk)
+                stream.flush()
+                _validate_pdf(stream)
+                os.fsync(stream.fileno())
+            os.link(temporary, target)
+            return StagedPdf(key, digest.hexdigest(), source_hash.hexdigest(), size, 'local')
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def discard_staged(self, staging_key: str) -> None:
         self._staged_path(staging_key).unlink(missing_ok=True)

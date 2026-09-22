@@ -52,7 +52,7 @@ This copies referenced owned objects, not arbitrary loose files, derived caches 
 
 A corrupt object is retained and reported; do not silently replace it or relabel its checksum. Restore a separately verified copy under an operator-reviewed repair procedure. If relocation fails, keep the old root configured and fix/retry the copy. Switching back to an old root after new uploads requires preserving those new assets first. Never restore a stale DB over newer Notes or AI history.
 
-The adapter prevents Workbench from mutating published bytes and rejects redirected child paths. It does not impose OS ACLs against other local programs; do not externally edit hash-named originals. The maximum new PDF size remains 50 MiB and the existing PDF format validation remains in effect.
+The adapter prevents Workbench from mutating published bytes and rejects redirected child paths. It does not impose OS ACLs against other local programs; do not externally edit hash-named originals. Browser uploads remain bounded at 50 MiB. Verified provider acquisition and Vault relocation use disk-backed streaming bounded at 256 MiB; PDF structure validation still applies. Source-transfer staging uses `.acquiring` keys, which upload cleanup does not remove.
 
 Reproducible copied-real-data rehearsal:
 

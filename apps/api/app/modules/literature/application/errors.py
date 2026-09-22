@@ -48,6 +48,10 @@ class LocalAssetError(PdfUnavailableError):
         self.state = state
 
 
+class PdfSizeLimitError(ValueError):
+    pass
+
+
 class LiteratureAIError(LiteratureError):
     """Expected failures at the Literature AI boundary."""
 

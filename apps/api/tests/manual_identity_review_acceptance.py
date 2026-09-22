@@ -16,7 +16,7 @@ def main():
     source = Path(settings.database_url.removeprefix('sqlite:///')).resolve()
     before = fingerprints(source)
     dry = SQLiteLiteratureIdentityRepository(f'sqlite:///{source}').run_migration(dry_run=True)
-    assert dry['workflow_schema_version'] == 4 and fingerprints(source) == before
+    assert dry['workflow_schema_version'] >= 4 and fingerprints(source) == before
     Path('.venv/tmp').mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='identity-review-acceptance-', dir='.venv/tmp') as directory:
         copy = Path(directory).resolve() / 'copy.db'
@@ -54,7 +54,7 @@ def main():
             assert c.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
             assert not c.execute('PRAGMA foreign_key_check').fetchall()
         assert fingerprints(source) == before
-        print(json.dumps({'source_unchanged': True, 'dry_run_source_unchanged': True, 'historical_tables_checked': len(before), 'copied_workflow_schema': 4, 'orphan_conflicts_observed': len(orphaned), 'orphan_parent_not_guessed': True, 'copied_review_and_reopen': True, 'canonical_and_research_rows_preserved': True, 'integrity': 'ok'}, indent=2))
+        print(json.dumps({'source_unchanged': True, 'dry_run_source_unchanged': True, 'historical_tables_checked': len(before), 'copied_workflow_schema': dry['workflow_schema_version'], 'orphan_conflicts_observed': len(orphaned), 'orphan_parent_not_guessed': True, 'copied_review_and_reopen': True, 'canonical_and_research_rows_preserved': True, 'integrity': 'ok'}, indent=2))
 
 
 if __name__ == '__main__':

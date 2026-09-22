@@ -1,5 +1,6 @@
 import logging
 import re
+from dataclasses import replace
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -7,6 +8,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 
 from app.core.config import Settings
+from app.modules.literature.infrastructure.providers.zotero.local_files import LocalZoteroFiles
 from app.modules.literature.application.errors import (
     InvalidCollectionIdentifierError,
     PdfUnavailableError,
@@ -43,6 +45,7 @@ class ZoteroWebProvider:
     def __init__(self, app_settings: Settings, client: httpx.Client | None = None) -> None:
         self._settings = app_settings
         self._client = client or httpx.Client(timeout=15.0)
+        self._local = LocalZoteroFiles(app_settings.zotero_data_dir) if app_settings.zotero_data_dir else None
 
     @property
     def configured(self) -> bool:
@@ -210,6 +213,28 @@ class ZoteroWebProvider:
             notes=tuple(notes), attachments=tuple(attachments),
         )
 
+    def describe_attachment(self, attachment: Attachment) -> Attachment:
+        reference = attachment.external_ref
+        if reference is None or reference.provider != self.name or reference.library_id != self.library_id:
+            raise PdfUnavailableError('Source attachment reference is unavailable')
+        if self._local:
+            local = self._local.describe(reference)
+            if local is not None:
+                described = self._map_attachment(local)
+                return replace(described, source_channel='zotero_local', source_locator=local['local_locator'])
+        payload, _ = self._request_payload(f'items/{reference.item_key}', params={})
+        if not isinstance(payload, dict) or self._is_trashed(payload):
+            raise PdfUnavailableError('Source attachment is unavailable')
+        described = self._map_attachment(payload)
+        if described is None or described.external_ref != reference or not described.downloadable:
+            raise PdfUnavailableError('Source is not an accessible PDF attachment')
+        return replace(described, source_channel='zotero_web')
+
+    def close(self) -> None:
+        self._client.close()
+        if self._local:
+            self._local.close()
+
     def open_attachment(
         self,
         attachment: Attachment,
@@ -224,6 +249,16 @@ class ZoteroWebProvider:
             or not attachment.downloadable
         ):
             raise PdfUnavailableError("The PDF attachment is not available through Zotero Web API")
+
+        if self._local and attachment.source_channel != 'zotero_web':
+            local = self._local.describe(reference)
+            if local is not None:
+                described = self._map_attachment(local)
+                if described.paper_id != (attachment.source_paper_id or attachment.paper_id):
+                    raise PdfUnavailableError('Local attachment parent changed')
+                return self._local.open(reference, filename=described.filename, range_header=range_header)
+            if attachment.source_channel == 'zotero_local':
+                raise PdfUnavailableError('Registered local attachment disappeared')
 
         url = f"{API_BASE_URL}/users/{self.library_id}/items/{reference.item_key}/file"
         request_headers = self._headers()
@@ -526,6 +561,7 @@ class ZoteroWebProvider:
             ),
             link_mode=link_mode,
             content_version=str(record.get("version") or data.get("version") or ""),
+            source_md5=self._optional_string(data.get('md5')),
             external_ref=reference,
         )
 

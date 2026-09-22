@@ -290,17 +290,6 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
                 c.execute("UPDATE literature_documents SET reading_status='saved' WHERE id=?", (result.paper_id,))
             return result
 
-    def materialize_asset(self, paper_id, asset, source_asset):
-        self._require_canonical()
-        with self._connect() as c:
-            c.execute('BEGIN IMMEDIATE')
-            paper = self._editable_paper(c, paper_id)
-            current = c.execute('SELECT payload_json FROM literature_assets WHERE id=? AND paper_id=? AND active=1', (source_asset.id,paper.id)).fetchone()
-            if not current or _attachment(json.loads(current[0])).content_version != source_asset.content_version:
-                raise WorkflowConflictError('Source attachment changed; retry materialization')
-            result, saved = self._ingest_asset(c, Ingestion(paper,'zotero_materialization',source_asset.id+':'+str(source_asset.content_version or ''),{'source_asset':source_asset.id,'version':source_asset.content_version},0,'zotero_file'), asset)
-            return saved
-
     def select_primary_asset(self, paper_id, asset_id):
         self._require_canonical()
         with self._connect() as c:
@@ -310,6 +299,6 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
             if not row:
                 raise WorkflowConflictError('Asset is no longer available')
             asset = _attachment(json.loads(row[0]))
-            if not asset.downloadable or asset.content_type != 'application/pdf' or asset.role != 'primary':
+            if not asset.downloadable or asset.content_type != 'application/pdf' or asset.role not in {'primary', 'preprint'}:
                 raise WorkflowConflictError('Asset cannot be selected as primary')
             c.execute('UPDATE literature_documents SET metadata_json=? WHERE id=?', (_json(asdict(replace(paper,primary_asset_id=asset_id))),paper.id))
