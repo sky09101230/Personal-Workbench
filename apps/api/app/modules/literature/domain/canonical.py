@@ -91,6 +91,7 @@ def compatible(existing: Paper, incoming: Paper) -> None:
 
 
 def corroborated_title(existing: Paper, incoming: Paper) -> bool:
+    """Weak review-candidate signal only; never sufficient for canonical association."""
     key = title_key(incoming.title)
     return bool(
         len(key) >= 12 and key not in {"untitled paper", "untitled document"}

@@ -82,7 +82,7 @@ async def upload_pdf(
     except LiteratureResourceNotFoundError as error:
         raise HTTPException(404, detail={"code": "paper_not_found"}) from error
     except IdentityConflictError as error:
-        raise HTTPException(409, detail={"code": "identity_conflict", "reason": str(error)}) from error
+        raise HTTPException(409, detail={"code": "identity_conflict", "reason": str(error), "candidates": error.candidates}) from error
     except ValueError as error:
         raise HTTPException(422, detail={"code": "invalid_pdf", "reason": str(error)}) from error
 

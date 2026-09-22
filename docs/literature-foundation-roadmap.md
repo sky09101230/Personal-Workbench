@@ -84,7 +84,7 @@ Real migration uses SQLite online backup, independent file copies, verified chec
 
 - [x] Current implementation, workflow and real-data read-only audit.
 - [x] Baseline backend verification and dependency-ordered roadmap.
-- [ ] Change 1 proposed, implemented, accepted, validated and committed.
+- [x] Change 1 proposed, implemented, accepted, validated and committed: `tighten-literature-identity-evidence`; 231 backend tests; copied real DB preservation across 55 tables. See its acceptance.md.
 - [ ] Change 2 accepted and committed.
 - [ ] Change 3 accepted and committed.
 - [ ] Change 4 accepted and committed.

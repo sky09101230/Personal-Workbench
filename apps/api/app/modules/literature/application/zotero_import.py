@@ -13,6 +13,8 @@ class ImportItemResult:
     status: str = "imported"
     created: bool = False
     error: str | None = None
+    reason: str | None = None
+    candidates: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -42,8 +44,8 @@ class ZoteroImportService:
                 results.append(ImportItemResult(identifier,result.paper_id,"imported" if result.created else "already_exists",result.created))
             except MigrationRequiredError:
                 raise
-            except IdentityConflictError:
-                results.append(ImportItemResult(identifier,status="conflict",error="identity_conflict"))
+            except IdentityConflictError as error:
+                results.append(ImportItemResult(identifier,status="conflict",error="identity_conflict",reason=str(error),candidates=error.candidates))
             except (LiteratureError, ValueError):
                 results.append(ImportItemResult(identifier,status="failed",error="source_item_unavailable"))
         return results

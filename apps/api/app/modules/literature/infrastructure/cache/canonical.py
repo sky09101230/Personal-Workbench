@@ -245,7 +245,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         try:
             return self._ingest(c, incoming)
         except (IdentityConflictError, ValueError) as error:
-            self._conflict(c, incoming.paper.id, str(error), asdict(incoming))
+            self._conflict(c, incoming.paper.id, str(error), {**asdict(incoming), "candidates": list(getattr(error, "candidates", ()))})
             # Preserve ambiguous source rows independently; never claim a conflicting identifier.
             return self._ingest(c, incoming, preserve=True)
 
@@ -260,22 +260,26 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         known = self._resolve(c, paper.id) if paper.id else None
         ids = {} if preserve else identifiers(paper)
         strong = {known} if known else set()
+        reasons = {"known_identity"} if known else set()
         if paper.external_ref:
             ref = paper.external_ref
             row = c.execute("SELECT paper_id FROM literature_source_references WHERE provider=? AND library_id=? AND item_key=?", (ref.provider, ref.library_id, ref.item_key)).fetchone()
             if row:
                 strong.add(row[0])
+                reasons.add("external_reference")
         origin = c.execute("SELECT paper_id FROM literature_origins WHERE kind=? AND origin_key=?", (incoming.origin, incoming.origin_key)).fetchone()
         if origin:
             strong.add(origin[0])
+            reasons.add("file_import_replay" if incoming.origin == "manual_pdf" else "origin_replay")
         if not preserve:
             for kind, value in ids.items():
                 row = c.execute("SELECT paper_id FROM literature_identifiers WHERE kind=? AND value=?", (kind, value)).fetchone()
                 if row:
                     strong.add(row[0])
+                    reasons.add("scholarly_identifier")
         if len(strong) > 1:
             raise IdentityConflictError("Identifiers resolve to different canonical papers", tuple(sorted(strong)))
-        reason = "stable_identifier" if strong else "new"
+        reason = "+".join(sorted(reasons)) if strong else "new"
         if not strong and not preserve:
             matches = []
             for row in c.execute("SELECT metadata_json FROM literature_documents"):
@@ -285,13 +289,9 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                     if formal_doi(existing.doi) and formal_doi(ids.get("doi")) and existing.doi != ids["doi"]:
                         raise IdentityConflictError("Same title has conflicting formal DOI", (existing.id,))
                     if corroborated_title(existing, paper):
-                        compatible(existing, paper)
                         matches.append(existing.id)
-            if len(matches) > 1:
-                raise IdentityConflictError("Ambiguous title/year/author match", tuple(matches))
-            strong.update(matches)
             if matches:
-                reason = "corroborated_title_year_author"
+                raise IdentityConflictError("Weak title/year/author evidence requires review", tuple(sorted(matches)))
         canonical = next(iter(strong)) if strong else _id("paper", "legacy:" + paper.id) if paper.id else _id("paper")
         row = c.execute("SELECT * FROM literature_documents WHERE id=?", (canonical,)).fetchone()
         created = row is None
@@ -311,6 +311,8 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 continue
             prior = priorities.get(field, {"priority": -1, "source": ""})
             identity_field = field in {"doi", "arxiv_id", "openalex_id"}
+            if preserve and row and identity_field:
+                continue  # Rejected source evidence must not fill a canonical identity blank.
             stronger = incoming.priority > prior["priority"] or (incoming.priority == prior["priority"] and incoming.source == prior["source"])
             if not row or not metadata.get(field) or (stronger and not identity_field and not preserve) or (not preserve and field == "doi" and formal_doi(value) and not formal_doi(metadata.get(field))):
                 metadata[field] = value

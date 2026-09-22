@@ -106,11 +106,14 @@ def test_identity_idempotent_and_formal_conflict(repository):
     assert repository.list_papers().total == 1
 
 
-def test_title_fallback_requires_year_and_author(repository):
+def test_title_year_author_only_requires_review(repository):
     p = replace(paper(), doi=None, external_ref=None)
     a = repository.ingest(ingest(p))
-    b = repository.ingest(ingest(replace(p, id="other"), "two"))
-    assert a.paper_id == b.paper_id
+    with pytest.raises(IdentityConflictError, match="requires review") as error:
+        repository.ingest(ingest(replace(p, id="other"), "two"))
+    assert error.value.candidates == (a.paper_id,)
+    assert repository.get_paper("other") is None
+    assert repository.list_papers().total == 1
     c = repository.ingest(ingest(replace(p, id="third", year=None), "three"))
     assert c.paper_id != a.paper_id
 

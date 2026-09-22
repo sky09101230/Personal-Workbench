@@ -27,6 +27,7 @@ class UploadConfirmResult(BaseModel):
     asset_id: str | None = None
     created: bool | None = None
     error: str | None = None
+    candidates: list[str] = Field(default_factory=list)
 
 
 class UploadConfirmResponse(BaseModel):
