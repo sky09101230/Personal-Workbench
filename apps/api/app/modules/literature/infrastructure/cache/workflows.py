@@ -118,7 +118,7 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
                 response = {'item_id': item.id, 'status': status, 'error': reason}
                 if isinstance(error, IdentityConflictError):
                     response['candidates'] = list(error.candidates)
-                    self._conflict(c, item.id, reason, {'batch_id': batch_id, 'item_id': item.id, 'candidates': list(error.candidates), 'metadata': item.candidate_metadata})
+                    self._store_rejection(c, incoming, error)
             pending = c.execute("SELECT 1 FROM literature_upload_items WHERE batch_id=? AND status NOT IN ('confirmed','cancelled')", (batch_id,)).fetchone()
             c.execute('UPDATE literature_upload_batches SET status=?,confirmed_at=? WHERE id=?', ('reviewing' if pending else 'confirmed', None if pending else _now(), batch_id))
             return response

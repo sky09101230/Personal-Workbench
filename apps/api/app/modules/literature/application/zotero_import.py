@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass
 
 from app.modules.literature.application.ports import CanonicalLibrary, LiteratureProvider
 from app.modules.literature.application.errors import LiteratureError, MigrationRequiredError
-from app.modules.literature.domain.canonical import IdentityConflictError
+from app.modules.literature.domain.canonical import IdentityConflictError, Ingestion
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,7 @@ class ZoteroImportService:
             raise ValueError("Select between 1 and 100 items")
         results = []
         for identifier in dict.fromkeys(item_keys):
+            changes = None
             try:
                 changes = self.provider.get_import_item(identifier)
                 result = self.repository.import_selected_item(changes)
@@ -45,6 +46,9 @@ class ZoteroImportService:
             except MigrationRequiredError:
                 raise
             except IdentityConflictError as error:
+                if changes and changes.papers:
+                    paper = changes.papers[0].paper
+                    self.repository.record_ingestion_conflict(Ingestion(paper, 'zotero_selective', paper.id, {'method': 'selective'}, 80, 'zotero', True), error)
                 results.append(ImportItemResult(identifier,status="conflict",error="identity_conflict",reason=str(error),candidates=error.candidates))
             except (LiteratureError, ValueError):
                 results.append(ImportItemResult(identifier,status="failed",error="source_item_unavailable"))

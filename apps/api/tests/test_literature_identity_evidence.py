@@ -26,7 +26,9 @@ def test_shared_strong_evidence_and_disagreement_preserve_ownership(workflow):
     with pytest.raises(IdentityConflictError) as error:
         repository.ingest(Ingestion(replace(p, doi='10.1234/other'), 'zotero_import', 'A'))
     assert set(error.value.candidates) == {first.paper_id, other.paper_id}
-    assert repository.provenance(first.paper_id) == before
+    after = repository.provenance(first.paper_id)
+    assert {key: value for key, value in after.items() if key != 'conflicts'} == {key: value for key, value in before.items() if key != 'conflicts'}
+    assert len(after['conflicts']) == len(before['conflicts']) + 1
     assert repository.list_papers().total == 2
 
 

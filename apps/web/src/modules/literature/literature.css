@@ -107,3 +107,5 @@
   .wb-library dl > div { grid-template-columns: 90px minmax(0, 1fr); }
   .wb-detail-heading h2 { font-size: 20px; }
 }
+
+.wb-library .wb-asset-integrity { overflow-wrap: anywhere; }

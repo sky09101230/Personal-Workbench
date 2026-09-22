@@ -26,8 +26,9 @@ class LiteratureIngestionService:
         appearances = exported["appearances"]
         selected = next(x for x in appearances if x["recommendation_id"] == recommendation_id)
         paper = replace(paper, date_evidence=selected.get("date_evidence", {}))
-        # All appearances come from the persisted News export, never client-supplied judgments.
-        return self.repository.ingest_appearances(Ingestion(paper, "radar", recommendation_id, selected, 60, "radar_evidence", True), appearances)
+        # A News discovery group is not scholarly identity evidence for every appearance.
+        evidence = {**selected, "metadata_scope": "current_discovery_snapshot", "unverified_related_appearances": [item for item in appearances if item["recommendation_id"] != recommendation_id]}
+        return self.repository.ingest(Ingestion(paper, "radar", recommendation_id, evidence, 60, "radar_evidence", True))
 
     def upload_pdf(self, data: bytes, filename: str, *, paper_id: str | None = None, title: str | None = None, role: str = "primary"):
         if role not in {"primary", "preprint", "supplementary"}:

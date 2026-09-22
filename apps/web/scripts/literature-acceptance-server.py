@@ -30,7 +30,7 @@ from app.main import app
 from app.modules.literature.application.ai.service import LiteratureAIService
 from app.modules.literature.application.materialization import PdfMaterializationService
 from app.modules.literature.application.zotero_import import ZoteroImportService
-from app.modules.literature.domain.canonical import Ingestion
+from app.modules.literature.domain.canonical import Ingestion, IdentityConflictError
 from app.modules.literature.domain.models import Attachment, ChangedPaper, Collection, ExternalReference, LibraryChanges, Note, Paper, PaperPage, ProviderFile
 from tests.test_literature_ai_service import _Context, _Provider
 
@@ -90,6 +90,17 @@ source_paper = Paper('fixture:evidence', 'Evidence review acceptance', ('Review 
 evidence_paper_id = repository.ingest(Ingestion(source_paper, 'zotero_import', source_paper.id, source='zotero')).paper_id
 repository.ingest(Ingestion(replace(source_paper, title='Reviewed source title'), 'zotero_import', source_paper.id, {'library_version': '2'}, 999, 'zotero'))
 repository.ingest(Ingestion(Paper('', 'Another identifier owner', doi='10.1234/owned'), 'manual', 'owned'))
+preprint_id = repository.ingest(Ingestion(Paper('', 'Identity preprint sample', ('Review Author',), year=2026, arxiv_id='2609.54321'), 'manual', 'identity-preprint')).paper_id
+published_id = repository.ingest(Ingestion(Paper('', 'Version publication sample', ('Review Author',), year=2026, doi='10.1234/version'), 'manual', 'identity-published')).paper_id
+app.state.literature_ingestion_service.upload_pdf(pdf('Owned identity sample'), 'identity.pdf', paper_id=published_id)
+weak = Paper('', 'Separate same-title evidence sample', ('Example Author',), year=2026)
+repository.ingest(Ingestion(weak, 'manual', 'weak-original'))
+try:
+    repository.ingest(Ingestion(weak, 'manual', 'weak-candidate'))
+except IdentityConflictError:
+    pass
+with repository._connect() as connection:
+    repository._conflict(connection, 'orphan-fixture', 'Source asset parent unresolved', {'id': 'orphan-fixture', 'paper_id': 'missing-parent', 'filename': 'orphan.pdf'})
 radar = json.loads((ROOT / "apps/api/tests/fixtures/literature_radar_v2.json").read_text(encoding="utf-8"))
 assert client.post("/api/news/papers/research/ingest", json=radar).status_code == 200
 dist = ROOT / "apps/web/dist"

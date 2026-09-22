@@ -29,6 +29,7 @@ class Paper:
     pdf_available: bool = False
     metadata_status: str = "incomplete"
     metadata_review_status: str = "unreviewed"
+    identity_status: str = "unresolved"
     date_evidence: dict[str, object] = field(default_factory=dict)
     primary_asset_id: str | None = None
 

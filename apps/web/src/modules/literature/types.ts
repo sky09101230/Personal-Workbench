@@ -37,6 +37,7 @@ export type Paper = {
   pdf_available: boolean;
   metadata_status: string;
   metadata_review_status?: string;
+  identity_status?: string;
 };
 
 export type Note = {
@@ -194,6 +195,22 @@ export type MetadataProposal = {
 export type MetadataProvenance = {
   metadata_evidence: { id: string; source: string; observed_at: string; metadata: MetadataPatch; evidence: Record<string, unknown> }[];
   selected_fields: Record<string, { source: string; evidence_id?: string; reviewed?: boolean; selection_basis?: string }>;
+};
+export type IdentityConflict = {
+  id: string; legacy_id: string | null; reason: string; payload: Record<string, unknown>;
+  paper_ids: string[]; decision: string; snapshot: string;
+  papers: { id: string; title: string; doi: string | null; deleted: boolean }[];
+  history: { id: string; decision: string; reason: string; created_at: string }[];
+};
+export type PaperVersion = {
+  id: string; preprint_id: string; published_id: string; status: string; snapshot: string; needs_review: boolean;
+  current_metadata: { preprint: MetadataPatch | null; published: MetadataPatch | null };
+  evidence: { history: { action: string; reason: string; reviewed_at: string }[] };
+};
+export type IdentityContext = {
+  paper_id: string; metadata: MetadataPatch; identity_status: string; snapshot: string;
+  identifiers: { kind: string; value: string }[]; evidence: MetadataProvenance["metadata_evidence"];
+  conflicts: IdentityConflict[]; pending_proposals: string[]; versions: PaperVersion[];
 };
 export type UploadItem = {
   id: string; filename: string; status: string;

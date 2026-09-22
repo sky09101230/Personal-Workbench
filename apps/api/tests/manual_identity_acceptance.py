@@ -66,7 +66,9 @@ def main():
             assert eligible.id in error.candidates
         else:
             raise AssertionError('Weak bibliographic import was not rejected')
-        assert fingerprints(copy) == snapshot, 'Rejected import changed existing rows'
+        rejected = fingerprints(copy)
+        assert all(rejected[name] == value for name, value in snapshot.items() if name != 'literature_identity_conflicts'), 'Rejected import changed canonical/research rows'
+        snapshot = rejected
         strong = Ingestion(replace(eligible, id='', external_ref=None), 'acceptance', str(uuid4()))
         replay = repository.ingest(strong)
         assert replay.paper_id == eligible.id and not replay.created
@@ -88,7 +90,7 @@ def main():
             'audit_issues': len(real_report['issues']),
             'weak_aliases': len(real_report['weak_aliases']),
             'historical_unresolved_records': len(real_report['unresolved_records']),
-            'weak_import_rejected_without_writes': True,
+            'weak_import_rejected_without_canonical_writes': True,
             'strong_replay_preserved_canonical_id': True,
             'protected_rows_preserved': True,
             'integrity': 'ok',

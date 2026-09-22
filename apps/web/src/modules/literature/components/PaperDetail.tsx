@@ -6,6 +6,8 @@ import type { AttachmentsResponse, CollectionsResponse, LiteratureUserNote, Meta
 import { ImportPanel } from "./ImportPanel";
 import { LiteratureAIAssistant } from "./LiteratureAIAssistant";
 import { MetadataReview } from "./MetadataReview";
+import { IdentityReview } from "./IdentityReview";
+import { AssetIntegrity } from "./AssetIntegrity";
 
 type Provenance = MetadataProvenance & { references: Record<string, unknown>[]; origins: Record<string, unknown>[]; source_collections: unknown[]; conflicts: unknown[]; identifiers: unknown[] };
 function OriginEvidence({ evidence }: { evidence: unknown }) {
@@ -43,11 +45,13 @@ export function PaperDetail({ paperId, onBack, onChanged }: { paperId: string; o
     {loading && !detail ? <p role="status">正在加载正式文献…</p> : detail && <>
       <header className="wb-detail-heading"><span className="wb-eyebrow">正式文献</span><h2>{detail.paper.title}</h2><p>{detail.paper.authors.join(", ") || "未记录作者"}</p><small>{[detail.paper.journal, detail.paper.year].filter(Boolean).join(" · ")}</small><div className="wb-actions">{detail.pdf_available && <a href={`/literature/papers/${encodeURIComponent(detail.paper.id)}/reader`}>阅读 PDF</a>}<span className="wb-badge">元数据：{literatureLabel(detail.paper.metadata_status)}</span></div></header>
       <nav className="wb-subtabs" aria-label="文献详情分区">{["元数据", "文件", "外部来源", "入库途径", "笔记", "AI"].map((value) => <button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{value}</button>)}</nav>
+      {tab === "文件" && <AssetIntegrity paperId={detail.paper.id} files={files} />}
       {tab === "元数据" && <>
         <dl className="wb-metadata">{["doi", "arxiv_id", "openalex_id", "abstract"].map((field) => <div key={field}><dt>{literatureLabel(field)}</dt><dd>{String(detail.paper[field as "doi"] || "未记录")}</dd></div>)}</dl>
         <div className="wb-filters"><label>阅读状态<select disabled={busy} value={detail.paper.reading_status} onChange={(e) => void act(async () => { await patchJson(`${base}/state`, { reading_status: e.target.value }); refresh(); })}>{["inbox", "saved", "reading", "read", "archived"].map((value) => <option key={value} value={value}>{literatureLabel(String(value))}</option>)}</select></label><label>标签（使用英文逗号分隔）<input value={tags} onChange={(e) => setTags(e.target.value)} /></label><button disabled={busy} onClick={() => void act(async () => { await patchJson(`${base}/state`, { tags: tags.split(",").map((value) => value.trim()).filter(Boolean) }); refresh(); })}>保存标签</button></div>
         <details><summary>本地集合归属</summary>{!collections.length && <p>可在文献库的筛选区域创建集合。</p>}{collections.map((collection) => <label className="wb-check" key={collection.id}><input type="checkbox" disabled={busy} checked={detail.collections.some((c) => c.id === collection.id)} onChange={(e) => void act(async () => { await patchJson(`${base}/collections/${encodeURIComponent(collection.id)}`, { present: e.target.checked }); refresh(); })} />{collection.name}</label>)}</details>
         <MetadataReview paper={detail.paper} provenance={provenance} onChanged={refresh} />
+        <IdentityReview paper={detail.paper} onChanged={refresh} />
         <details><summary>元数据依据与冲突</summary><pre>{JSON.stringify({ selected_fields: provenance?.selected_fields, metadata_evidence: provenance?.metadata_evidence, conflicts: provenance?.conflicts, identifiers: provenance?.identifiers }, null, 2)}</pre></details>
         <div className="wb-actions">{removing ? <><span>从文献库移除？保留的数据仍可恢复。</span><button disabled={busy} onClick={() => void act(async () => { await deleteJson(base); onChanged(); onBack(); })}>确认移除</button><button onClick={() => setRemoving(false)}>取消</button></> : <button onClick={() => setRemoving(true)}>从文献库移除</button>}</div>
       </>}

@@ -88,6 +88,6 @@ Real migration uses SQLite online backup, independent file copies, verified chec
 - [x] Change 1 proposed, implemented, accepted, validated and committed: `tighten-literature-identity-evidence`; 231 backend tests; copied real DB preservation across 55 tables. See its acceptance.md.
 - [x] Change 2 accepted and committed: `harden-literature-vault`; 238 backend tests; on-disk relocation/replay and offline Reader acceptance on a real DB backup. Real assets remain remote-only pending Change 4.
 - [x] Change 3a accepted and committed: `review-literature-metadata-evidence`; 243 tests, frontend build, browser decisions and real-backup upgrade rehearsal. An existing unisolated status test triggered backed-up live additive DDL; only schema/maintenance ledgers changed and pytest startup is now isolated. See acceptance.md.
-- [ ] Change 3b identity-conflict/version/Radar handoff accepted and committed.
+- [x] Change 3b accepted and committed: `review-literature-identity-and-versions`; 253 tests, build/browser decisions and version-4 real-copy preservation. No live identity decisions or source-byte acquisition yet.
 - [ ] Change 4 accepted and committed.
 - [ ] Change 5 accepted; final Goal gaps reviewed and closed.

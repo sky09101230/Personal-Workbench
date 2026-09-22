@@ -119,13 +119,13 @@ def test_schema_upgrade_backup_dry_run_replay_and_rollback(tmp_path, monkeypatch
     pid = repository.ingest(Ingestion(Paper('', 'Preserve original metadata'), 'manual', 'one')).paper_id
     with repository._connect() as c:
         c.execute('DROP TABLE literature_proposal_evidence')
-        c.execute('DELETE FROM literature_workflow_schema WHERE version=3')
+        c.execute('DELETE FROM literature_workflow_schema WHERE version>=3')
         c.execute("DELETE FROM literature_maintenance_actions WHERE name='metadata_evidence_schema'")
         original = c.execute('SELECT * FROM literature_documents').fetchall()
     before = path.read_bytes()
     upgrade = SQLiteLiteratureWorkflowRepository(f'sqlite:///{path}')
     dry = upgrade.run_migration(dry_run=True)
-    assert dry['workflow_schema_version'] == 3 and path.read_bytes() == before
+    assert dry['workflow_schema_version'] >= 3 and path.read_bytes() == before
     schema = canonical._SCHEMA
     monkeypatch.setattr(canonical, '_SCHEMA', (*schema, 'INVALID SQL FOR ROLLBACK'))
     with pytest.raises(sqlite3.OperationalError):

@@ -6,6 +6,7 @@ export function workflowError(error: unknown): string {
   if (!(error instanceof ApiError)) return error instanceof Error ? error.message : "请求失败，请重试。";
   if (error.code === "workflow_conflict") return "审核已过期或已经处理。请重新加载当前元数据后再操作。";
   if (error.code === "identity_conflict") return "文献标识冲突，未执行合并。请核对 DOI 和 arXiv 后重试。";
+  if (error.code === "invalid_identity_review") return "请核对完整标识、支持证据与审核理由；版本关联需选择独立的预印本和正式论文。";
   if (error.code === "migration_required") return "文献库需要迁移，请通过明确的迁移操作完成升级。";
   if (error.code === "provider_not_configured") return "尚未配置 Zotero 连接器，本地文献库和 PDF 上传仍可使用。";
   if (error.status === 422) return "元数据或 PDF 无效，请检查标题、年份（1000–3000）、标识符和文件格式。";

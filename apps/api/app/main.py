@@ -16,7 +16,9 @@ from app.modules.literature.infrastructure.ai.deepseek_provider import (
     DeepSeekLiteratureAIProvider,
 )
 from app.modules.literature.infrastructure.ai.paper_context import PaperContextBuilder
-from app.modules.literature.infrastructure.cache.workflows import SQLiteLiteratureWorkflowRepository
+from app.modules.literature.infrastructure.cache.identity import SQLiteLiteratureIdentityRepository
+from app.modules.literature.application.identity import IdentityReviewService
+from app.modules.literature.presentation.identity_router import router as identity_router
 from app.modules.literature.infrastructure.extraction import extract_metadata
 from app.modules.literature.application.upload import UploadWorkflowService
 from app.modules.literature.application.review import MetadataReviewService
@@ -80,7 +82,7 @@ def create_app() -> FastAPI:
     )
 
     # Composition is kept here so presentation code does not know the provider implementation.
-    literature_repository = SQLiteLiteratureWorkflowRepository(settings.database_url)
+    literature_repository = SQLiteLiteratureIdentityRepository(settings.database_url)
     literature_files = LocalLiteratureFiles(settings.literature_vault_root or str(Path(settings.database_url.removeprefix("sqlite:///")).parent / "literature-assets"))
     literature_service = LiteratureService(
         ZoteroWebProvider(settings),
@@ -90,6 +92,7 @@ def create_app() -> FastAPI:
     app.state.literature_service = literature_service
     app.state.upload_workflow_service = UploadWorkflowService(literature_repository, literature_files, extract_metadata)
     app.state.metadata_review_service = MetadataReviewService(literature_repository)
+    app.state.identity_review_service = IdentityReviewService(literature_repository)
     app.state.zotero_import_service = ZoteroImportService(literature_repository, literature_service.provider)
     app.state.materialization_service = PdfMaterializationService(literature_repository, literature_files, literature_service.provider)
     app.add_exception_handler(LiteratureError, workflow_error_handler)
@@ -131,6 +134,7 @@ def create_app() -> FastAPI:
     app.include_router(canonical_library_router, prefix="/api/literature", tags=["literature-library"])
     app.include_router(upload_router, prefix="/api/literature", tags=["literature-uploads"])
     app.include_router(review_router, prefix="/api/literature", tags=["literature-metadata"])
+    app.include_router(identity_router, prefix="/api/literature", tags=["literature-identity"])
     app.include_router(
         literature_ai_router,
         prefix="/api/literature",

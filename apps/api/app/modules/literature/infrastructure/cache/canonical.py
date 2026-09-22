@@ -42,12 +42,15 @@ _SCHEMA = (
     "CREATE TABLE literature_upload_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES literature_upload_batches(id), filename TEXT NOT NULL, staging_key TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'staged', extracted_json TEXT NOT NULL DEFAULT '{}', candidate_json TEXT NOT NULL DEFAULT '{}', warnings_json TEXT NOT NULL DEFAULT '[]', target_paper_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
     "CREATE TABLE literature_metadata_proposals (id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES literature_documents(id), source TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', current_json TEXT NOT NULL, proposed_json TEXT NOT NULL, fields_changed_json TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT)",
     "CREATE TABLE literature_proposal_evidence (proposal_id TEXT NOT NULL REFERENCES literature_metadata_proposals(id), evidence_id TEXT NOT NULL REFERENCES literature_metadata_evidence(id), PRIMARY KEY(proposal_id,evidence_id))",
+    "CREATE TABLE literature_conflict_reviews (id TEXT PRIMARY KEY, conflict_id TEXT NOT NULL REFERENCES literature_identity_conflicts(id), decision TEXT NOT NULL, reason TEXT NOT NULL, context_json TEXT NOT NULL, created_at TEXT NOT NULL)",
+    "CREATE TABLE literature_paper_versions (id TEXT PRIMARY KEY, preprint_id TEXT NOT NULL REFERENCES literature_documents(id), published_id TEXT NOT NULL REFERENCES literature_documents(id), status TEXT NOT NULL, evidence_json TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(preprint_id,published_id))",
     # Indexes
     "CREATE INDEX literature_assets_paper_idx ON literature_assets(paper_id)",
     "CREATE INDEX literature_origins_paper_idx ON literature_origins(paper_id)",
     "CREATE INDEX literature_evidence_paper_idx ON literature_metadata_evidence(paper_id)",
     "CREATE INDEX literature_upload_items_batch_idx ON literature_upload_items(batch_id)",
     "CREATE INDEX literature_proposals_paper_idx ON literature_metadata_proposals(paper_id)",
+    "CREATE INDEX literature_conflict_reviews_conflict_idx ON literature_conflict_reviews(conflict_id)",
 )
 _AI_TABLES = ("literature_ai_analyses", "literature_ai_conversations", "literature_ai_messages", "literature_ai_paper_text", "literature_user_notes")
 
@@ -124,12 +127,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
 
     def ensure_schema(self) -> SchemaVersion:
         if self._schema_ready:
-            return SchemaVersion(3)
+            return SchemaVersion(4)
         upgrade_backup = None
         if Path(self._database_path).is_file():
             with closing(sqlite3.connect(Path(self._database_path).resolve().as_uri() + "?mode=ro", uri=True)) as probe:
                 tables = {row[0] for row in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                if "literature_documents" in tables and ("literature_workflow_schema" not in tables or not probe.execute("SELECT 1 FROM literature_workflow_schema WHERE version=3").fetchone()):
+                if "literature_documents" in tables and ("literature_workflow_schema" not in tables or not probe.execute("SELECT 1 FROM literature_workflow_schema WHERE version=4").fetchone()):
                     upgrade_backup = backup_database(self._database_path)
         super().ensure_schema()
         with self._connect() as c:
@@ -143,6 +146,9 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             if not c.execute("SELECT 1 FROM literature_workflow_schema WHERE version=3").fetchone():
                 c.execute("INSERT INTO literature_workflow_schema VALUES (3,?)", (_now(),))
                 c.execute("INSERT OR IGNORE INTO literature_maintenance_actions VALUES ('metadata_evidence_schema',?,?)", (_json({"schema_version": 3, "backup": upgrade_backup, "canonical_values_changed": 0}), _now()))
+            if not c.execute("SELECT 1 FROM literature_workflow_schema WHERE version=4").fetchone():
+                c.execute("INSERT INTO literature_workflow_schema VALUES (4,?)", (_now(),))
+                c.execute("INSERT OR IGNORE INTO literature_maintenance_actions VALUES ('identity_review_schema',?,?)", (_json({"schema_version": 4, "backup": upgrade_backup, "canonical_values_changed": 0}), _now()))
             migrated = c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone()
             if not migrated and not self._has_legacy(c):
                 report = self._report(c)
@@ -150,7 +156,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 report["fresh"] = True
                 c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
         self._schema_ready = True
-        return SchemaVersion(3)
+        return SchemaVersion(4)
 
     def run_migration(self, *, dry_run: bool = False) -> dict:
         # Copy before ensure_schema: dry-run is read-only even on legacy v1/v2 databases.
@@ -169,12 +175,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("BEGIN IMMEDIATE")
             row = c.execute("SELECT report_json FROM literature_canonical_migrations WHERE version=1").fetchone()
             if row:
-                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False, "workflow_schema_version": 3}
+                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False, "workflow_schema_version": 4}
             self._migrate(c)
             report = self._report(c)
             report["backup"] = backup
             c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
-        return {"status": "migrated", "report": report, "dry_run": False, "workflow_schema_version": 3}
+        return {"status": "migrated", "report": report, "dry_run": False, "workflow_schema_version": 4}
 
     def _require_canonical(self):
         if self.migration_required:
@@ -251,21 +257,42 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
     def _conflict(self, c, legacy, reason, payload):
         key = _id("conflict", _json([legacy, reason, payload]))
         c.execute("INSERT OR IGNORE INTO literature_identity_conflicts VALUES (?,?,?,?,?)", (key, legacy, reason, _json(payload), _now()))
+        return key
+
+    def record_ingestion_conflict(self, incoming, error):
+        with self._connect() as c:
+            return self._store_rejection(c, incoming, error)
+
+    @staticmethod
+    def _rejection_payload(incoming, error):
+        legacy = incoming.evidence.get('item_id') or incoming.paper.id or _id('intake', _json([incoming.origin, incoming.origin_key]))
+        return legacy, {**asdict(incoming), 'candidates': list(error.candidates)}
+
+    def _store_rejection(self, c, incoming, error):
+        legacy, payload = self._rejection_payload(incoming, error)
+        return self._conflict(c, legacy, str(error), payload)
+
+    def _separate_reviewed(self, c, incoming, error):
+        legacy, payload = self._rejection_payload(incoming, error)
+        conflict_id = _id('conflict', _json([legacy, str(error), payload]))
+        last = c.execute('SELECT decision FROM literature_conflict_reviews WHERE conflict_id=? ORDER BY rowid DESC LIMIT 1', (conflict_id,)).fetchone()
+        return bool(last and last[0] == 'keep_separate')
 
     def _preserved_ingest(self, c, incoming):
         try:
             return self._ingest(c, incoming)
         except (IdentityConflictError, ValueError) as error:
-            self._conflict(c, incoming.paper.id, str(error), {**asdict(incoming), "candidates": list(getattr(error, "candidates", ()))})
+            conflict_id = self._conflict(c, incoming.paper.id, str(error), {**asdict(incoming), "candidates": list(getattr(error, "candidates", ()))})
+            reviewed = c.execute("SELECT decision FROM literature_conflict_reviews WHERE conflict_id=? ORDER BY rowid DESC LIMIT 1", (conflict_id,)).fetchone()
             # Preserve ambiguous source rows independently; never claim a conflicting identifier.
-            return self._ingest(c, incoming, preserve=True)
+            return self._ingest(c, incoming, preserve=True, conflict_reviewed=bool(reviewed and reviewed[0] == 'keep_current'))
 
     @staticmethod
     def _resolve(c, paper_id):
         row = c.execute("SELECT id FROM literature_documents WHERE id=? UNION ALL SELECT paper_id FROM literature_paper_aliases WHERE alias=? LIMIT 1", (paper_id, paper_id)).fetchone()
         return row[0] if row else None
 
-    def _ingest(self, c, incoming: Ingestion, *, preserve=False):
+    def _ingest(self, c, incoming: Ingestion, *, preserve=False, conflict_reviewed=False):
         paper = incoming.paper
         now = _now()
         known = self._resolve(c, paper.id) if paper.id else None
@@ -298,11 +325,16 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 if title_key(existing.title) == title_key(paper.title) and len(title_key(paper.title)) >= 12:
                     # A conflicting formal DOI is not licensed by a title match.
                     if formal_doi(existing.doi) and formal_doi(ids.get("doi")) and existing.doi != ids["doi"]:
-                        raise IdentityConflictError("Same title has conflicting formal DOI", (existing.id,))
+                        error = IdentityConflictError("Same title has conflicting formal DOI", (existing.id,))
+                        if not self._separate_reviewed(c, incoming, error):
+                            raise error
+                        continue
                     if corroborated_title(existing, paper):
                         matches.append(existing.id)
             if matches:
-                raise IdentityConflictError("Weak title/year/author evidence requires review", tuple(sorted(matches)))
+                error = IdentityConflictError("Weak title/year/author evidence requires review", tuple(sorted(matches)))
+                if not self._separate_reviewed(c, incoming, error):
+                    raise error
         canonical = next(iter(strong)) if strong else _id("paper", "legacy:" + paper.id) if paper.id else _id("paper")
         row = c.execute("SELECT * FROM literature_documents WHERE id=?", (canonical,)).fetchone()
         created = row is None
@@ -333,7 +365,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         if priorities.get("tags", {}).get("priority", 0) < 100:
             metadata["tags"] = sorted(set(metadata.get("tags", [])) | set(paper.tags))
         metadata["date_evidence"] = {**metadata.get("date_evidence", {}), **{incoming.source: paper.date_evidence}} if paper.date_evidence else metadata.get("date_evidence", {})
-        metadata["metadata_status"] = "conflict" if preserve or metadata.get("metadata_status") == "conflict" else "complete" if metadata.get("title") and metadata.get("authors") and metadata.get("year") else "incomplete"
+        metadata["metadata_status"] = "conflict" if (preserve and not conflict_reviewed) or metadata.get("metadata_status") == "conflict" else "complete" if metadata.get("title") and metadata.get("authors") and metadata.get("year") else "incomplete"
         c.execute("INSERT INTO literature_documents VALUES (?,?,?,'inbox',0,?,?) ON CONFLICT(id) DO UPDATE SET metadata_json=excluded.metadata_json,field_priority_json=excluded.field_priority_json,updated_at=excluded.updated_at", (canonical, _json(metadata), _json(priorities), now, now))
         if incoming.restore:
             c.execute("UPDATE literature_documents SET deleted=0 WHERE id=?", (canonical,))
@@ -367,24 +399,23 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
 
     def ingest(self, incoming: Ingestion) -> IngestResult:
         self._require_canonical()
-        with self._connect() as c:
-            c.execute("BEGIN IMMEDIATE")
-            return self._ingest(c, incoming)
-
-    def ingest_appearances(self, incoming, appearances):
-        self._require_canonical()
-        with self._connect() as c:
-            c.execute("BEGIN IMMEDIATE")
-            result = self._ingest(c, incoming)
-            for appearance in appearances:
-                self._ingest(c, replace(incoming, paper=replace(incoming.paper, id=result.paper_id), origin_key=appearance["recommendation_id"], evidence=appearance, restore=False))
-            return result
+        try:
+            with self._connect() as c:
+                c.execute("BEGIN IMMEDIATE")
+                return self._ingest(c, incoming)
+        except IdentityConflictError as error:
+            self.record_ingestion_conflict(incoming, error)
+            raise
 
     def ingest_asset(self, incoming, asset):
         self._require_canonical()
-        with self._connect() as c:
-            c.execute("BEGIN IMMEDIATE")
-            return self._ingest_asset(c, incoming, asset)
+        try:
+            with self._connect() as c:
+                c.execute("BEGIN IMMEDIATE")
+                return self._ingest_asset(c, incoming, asset)
+        except IdentityConflictError as error:
+            self.record_ingestion_conflict(incoming, error)
+            raise
 
     def _ingest_asset(self, c, incoming, asset):
         result = self._ingest(c, incoming)
@@ -520,7 +551,27 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         pending = c.execute("SELECT 1 FROM literature_metadata_proposals WHERE paper_id=? AND status='pending' LIMIT 1", (paper.id,)).fetchone()
         reviewed = all(priorities.get(field, {}).get("reviewed", False) for field, value in metadata_snapshot(paper).items() if value not in (None, "", [], ()))
         review_status = "conflict" if paper.metadata_status == "conflict" else "needs_review" if pending else "reviewed" if reviewed else "unreviewed"
-        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf, metadata_review_status=review_status)
+        identity_status = self._identity_status(c, paper)
+        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf, metadata_review_status=review_status, identity_status=identity_status)
+
+    @staticmethod
+    def _identity_status(c, paper):
+        try:
+            claimed = identifiers(paper)
+        except (IdentityConflictError, ValueError):
+            return 'conflict'
+        if paper.metadata_status == 'conflict':
+            return 'conflict'
+        if not claimed:
+            return 'unresolved'
+        for kind, value in claimed.items():
+            owner = c.execute('SELECT paper_id FROM literature_identifiers WHERE kind=? AND value=?', (kind, value)).fetchone()
+            if not owner or owner[0] != paper.id:
+                return 'conflict'
+        last = c.execute("SELECT source,payload_json FROM literature_metadata_evidence WHERE paper_id=? AND source IN ('identity_confirmation','identity_correction') ORDER BY rowid DESC LIMIT 1", (paper.id,)).fetchone()
+        if last and last[0] == 'identity_confirmation' and json.loads(last[1])['evidence'].get('snapshot') == metadata_snapshot(paper):
+            return 'published_confirmed' if formal_doi(claimed.get('doi')) else 'preprint_confirmed' if claimed.get('arxiv') else 'identifier_confirmed'
+        return 'needs_review'
 
     def get_paper(self, paper_id):
         self._require_canonical()

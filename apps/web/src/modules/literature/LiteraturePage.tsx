@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getJson, postJson, workflowError } from "./api";
 import { PaperDetail } from "./components/PaperDetail";
 import { ImportCenter } from "./components/ImportCenter";
+import { IdentityConflictQueue } from "./components/IdentityReview";
 import { RadarInbox } from "../news/components/RadarInbox";
 import type { Collection, CollectionsResponse, FiltersResponse, LiteratureStatus, PapersResponse } from "./types";
 import "../news/news.css";
@@ -59,6 +60,7 @@ export function LiteraturePage({ status, apiError, onStatusReload }: { status: L
       {view === "library" && (paperId ? <PaperDetail key={paperId} paperId={paperId} onBack={() => open(null)} onChanged={refresh} /> : <>
         <div className="wb-summary"><span><strong>{metadataError ? "—" : total}</strong> 篇正式文献</span><span><strong>{metadataError ? "—" : collections.length}</strong> 个本地集合</span><span>由 Workbench 管理的文献库</span><button onClick={() => { refresh(); void onStatusReload(); }}>刷新</button></div>
         {(error || metadataError || apiError) && <p role="alert" className="wb-error">{error || metadataError || "无法连接 Workbench API，请检查后端服务。"} <button onClick={() => { refresh(); void onStatusReload(); }}>重试</button></p>}
+        <IdentityConflictQueue onChanged={refresh} />
         <div className="wb-filters"><label className="wb-search">搜索文献库<input type="search" placeholder="标题、关键词或标识符" value={filters.query} onChange={(e) => filter("query", e.target.value)} /></label>
           <label>阅读状态<select value={filters.reading_status} onChange={(e) => filter("reading_status", e.target.value)}><option value="">全部状态</option>{["inbox", "saved", "reading", "read", "archived"].map((value) => <option key={value} value={value}>{literatureLabel(String(value))}</option>)}</select></label>
           <label>本地集合<select value={filters.collection_id} onChange={(e) => filter("collection_id", e.target.value)}><option value="">全部集合</option>{collections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
