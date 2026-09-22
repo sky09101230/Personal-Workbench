@@ -18,6 +18,7 @@ from app.modules.literature.domain.models import (
 )
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository, SchemaVersion
 from app.modules.literature.application.errors import MigrationRequiredError
+from app.modules.literature.domain.workflow import METADATA_FIELDS, metadata_patch, metadata_snapshot
 
 
 _SCHEMA = (
@@ -40,6 +41,7 @@ _SCHEMA = (
     "CREATE TABLE literature_upload_batches (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'staging', created_at TEXT NOT NULL, confirmed_at TEXT, cancelled_at TEXT)",
     "CREATE TABLE literature_upload_items (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES literature_upload_batches(id), filename TEXT NOT NULL, staging_key TEXT NOT NULL, sha256 TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'staged', extracted_json TEXT NOT NULL DEFAULT '{}', candidate_json TEXT NOT NULL DEFAULT '{}', warnings_json TEXT NOT NULL DEFAULT '[]', target_paper_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
     "CREATE TABLE literature_metadata_proposals (id TEXT PRIMARY KEY, paper_id TEXT NOT NULL REFERENCES literature_documents(id), source TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', current_json TEXT NOT NULL, proposed_json TEXT NOT NULL, fields_changed_json TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT, resolved_by TEXT)",
+    "CREATE TABLE literature_proposal_evidence (proposal_id TEXT NOT NULL REFERENCES literature_metadata_proposals(id), evidence_id TEXT NOT NULL REFERENCES literature_metadata_evidence(id), PRIMARY KEY(proposal_id,evidence_id))",
     # Indexes
     "CREATE INDEX literature_assets_paper_idx ON literature_assets(paper_id)",
     "CREATE INDEX literature_origins_paper_idx ON literature_origins(paper_id)",
@@ -122,7 +124,13 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
 
     def ensure_schema(self) -> SchemaVersion:
         if self._schema_ready:
-            return SchemaVersion(2)
+            return SchemaVersion(3)
+        upgrade_backup = None
+        if Path(self._database_path).is_file():
+            with closing(sqlite3.connect(Path(self._database_path).resolve().as_uri() + "?mode=ro", uri=True)) as probe:
+                tables = {row[0] for row in probe.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if "literature_documents" in tables and ("literature_workflow_schema" not in tables or not probe.execute("SELECT 1 FROM literature_workflow_schema WHERE version=3").fetchone()):
+                    upgrade_backup = backup_database(self._database_path)
         super().ensure_schema()
         with self._connect() as c:
             c.execute("BEGIN IMMEDIATE")
@@ -132,6 +140,9 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("CREATE TABLE IF NOT EXISTS literature_state_edits (paper_id TEXT PRIMARY KEY, edited_at TEXT NOT NULL)")
             c.execute("CREATE TABLE IF NOT EXISTS literature_maintenance_actions (name TEXT PRIMARY KEY, report_json TEXT NOT NULL, applied_at TEXT NOT NULL)")
             c.execute("INSERT OR IGNORE INTO literature_workflow_schema VALUES (2,?)", (_now(),))
+            if not c.execute("SELECT 1 FROM literature_workflow_schema WHERE version=3").fetchone():
+                c.execute("INSERT INTO literature_workflow_schema VALUES (3,?)", (_now(),))
+                c.execute("INSERT OR IGNORE INTO literature_maintenance_actions VALUES ('metadata_evidence_schema',?,?)", (_json({"schema_version": 3, "backup": upgrade_backup, "canonical_values_changed": 0}), _now()))
             migrated = c.execute("SELECT 1 FROM literature_canonical_migrations WHERE version=1").fetchone()
             if not migrated and not self._has_legacy(c):
                 report = self._report(c)
@@ -139,7 +150,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 report["fresh"] = True
                 c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
         self._schema_ready = True
-        return SchemaVersion(2)
+        return SchemaVersion(3)
 
     def run_migration(self, *, dry_run: bool = False) -> dict:
         # Copy before ensure_schema: dry-run is read-only even on legacy v1/v2 databases.
@@ -158,12 +169,12 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("BEGIN IMMEDIATE")
             row = c.execute("SELECT report_json FROM literature_canonical_migrations WHERE version=1").fetchone()
             if row:
-                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False}
+                return {"status": "already_migrated", "report": json.loads(row[0]), "dry_run": False, "workflow_schema_version": 3}
             self._migrate(c)
             report = self._report(c)
             report["backup"] = backup
             c.execute("INSERT INTO literature_canonical_migrations VALUES (1,?)", (_json(report),))
-        return {"status": "migrated", "report": report, "dry_run": False}
+        return {"status": "migrated", "report": report, "dry_run": False, "workflow_schema_version": 3}
 
     def _require_canonical(self):
         if self.migration_required:
@@ -305,18 +316,19 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         priorities = json.loads(row["field_priority_json"]) if row else {}
         incoming_values = asdict(paper)
         incoming_values.update({"doi": ids.get("doi", paper.doi), "arxiv_id": ids.get("arxiv", paper.arxiv_id), "openalex_id": ids.get("openalex", paper.openalex_id)})
-        for field in ("title", "authors", "abstract", "year", "journal", "doi", "arxiv_id", "openalex_id"):
+        incoming_values["authors"] = list(paper.authors)
+        payload = {"metadata": asdict(paper), "evidence": incoming.evidence, "origin": incoming.origin, "origin_key": incoming.origin_key}
+        evidence_id = _id("evidence", _json([canonical, incoming.source, incoming.priority, payload]))
+        proposed = {}
+        for field in METADATA_FIELDS:
             value = incoming_values[field]
             if value in (None, "", [], ()):
                 continue
-            prior = priorities.get(field, {"priority": -1, "source": ""})
-            identity_field = field in {"doi", "arxiv_id", "openalex_id"}
-            if preserve and row and identity_field:
-                continue  # Rejected source evidence must not fill a canonical identity blank.
-            stronger = incoming.priority > prior["priority"] or (incoming.priority == prior["priority"] and incoming.source == prior["source"])
-            if not row or not metadata.get(field) or (stronger and not identity_field and not preserve) or (not preserve and field == "doi" and formal_doi(value) and not formal_doi(metadata.get(field))):
+            if not row:
                 metadata[field] = value
-                priorities[field] = {"priority": incoming.priority, "source": incoming.source}
+                priorities[field] = {"priority": incoming.priority, "source": incoming.source, "evidence_id": evidence_id, "reviewed": incoming.source == "upload_review" and not preserve}
+            elif value != metadata.get(field):
+                proposed[field] = value
         metadata["id"] = canonical
         if priorities.get("tags", {}).get("priority", 0) < 100:
             metadata["tags"] = sorted(set(metadata.get("tags", [])) | set(paper.tags))
@@ -327,16 +339,31 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("UPDATE literature_documents SET deleted=0 WHERE id=?", (canonical,))
         if paper.id and paper.id != canonical:
             c.execute("INSERT OR IGNORE INTO literature_paper_aliases VALUES (?,?,?)", (paper.id, canonical, reason))
-        for kind, value in ids.items():
+        for kind, value in (ids.items() if created else ()):
             c.execute("INSERT OR IGNORE INTO literature_identifiers VALUES (?,?,?)", (kind, value, canonical))
         if paper.external_ref:
             ref = paper.external_ref
             c.execute("INSERT INTO literature_source_references VALUES (?,?,?,?,1) ON CONFLICT(provider,library_id,item_key) DO UPDATE SET active=1", (ref.provider, ref.library_id, ref.item_key, canonical))
         c.execute("INSERT OR IGNORE INTO literature_origins VALUES (?,?,?,?,?)", (incoming.origin, incoming.origin_key, canonical, _json(incoming.evidence), str(incoming.evidence.get("generated_at") or now)))
-        payload = {"metadata": asdict(paper), "evidence": incoming.evidence, "origin": incoming.origin, "origin_key": incoming.origin_key}
-        evidence_id = _id("evidence", _json([canonical, incoming.source, incoming.priority, payload]))
         c.execute("INSERT OR IGNORE INTO literature_metadata_evidence VALUES (?,?,?,?,?,?)", (evidence_id, canonical, incoming.source, incoming.priority, _json(payload), now))
+        if proposed:
+            try:
+                proposed = metadata_patch(proposed)
+            except ValueError:
+                self._conflict(c, paper.id or canonical, "Source metadata candidate is invalid; review evidence", {"evidence_id": evidence_id, "paper_id": canonical})
+            else:
+                self._queue_metadata_proposal(c, canonical, "source:" + incoming.source, metadata_snapshot(_paper(metadata)), proposed, evidence_id)
         return IngestResult(canonical, created, reason)
+
+    @staticmethod
+    def _queue_metadata_proposal(c, canonical, source, current, proposed, evidence_id, *, proposal_id=None):
+        proposal_id = proposal_id or _id("proposal", _json([canonical, source, current, proposed]))
+        changed = [field for field in proposed if proposed[field] != current.get(field)]
+        if not changed:
+            return None
+        c.execute("INSERT OR IGNORE INTO literature_metadata_proposals VALUES (?,?,?,'pending',?,?,?,?,NULL,NULL)", (proposal_id, canonical, source, _json(current), _json(proposed), _json(changed), _now()))
+        c.execute("INSERT OR IGNORE INTO literature_proposal_evidence VALUES (?,?)", (proposal_id, evidence_id))
+        return proposal_id
 
     def ingest(self, incoming: Ingestion) -> IngestResult:
         self._require_canonical()
@@ -489,7 +516,11 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         sources = {r[0] for r in c.execute("SELECT provider FROM literature_source_references WHERE paper_id=? AND active=1", (paper.id,))}
         origin_kinds = tuple(sorted({r[0] for r in c.execute("SELECT kind FROM literature_origins WHERE paper_id=?", (paper.id,))}))
         pdf = any(json.loads(r[0]).get("downloadable") and json.loads(r[0]).get("content_type") == "application/pdf" for r in c.execute("SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1", (paper.id,)))
-        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf)
+        priorities = json.loads(row["field_priority_json"])
+        pending = c.execute("SELECT 1 FROM literature_metadata_proposals WHERE paper_id=? AND status='pending' LIMIT 1", (paper.id,)).fetchone()
+        reviewed = all(priorities.get(field, {}).get("reviewed", False) for field, value in metadata_snapshot(paper).items() if value not in (None, "", [], ()))
+        review_status = "conflict" if paper.metadata_status == "conflict" else "needs_review" if pending else "reviewed" if reviewed else "unreviewed"
+        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf, metadata_review_status=review_status)
 
     def get_paper(self, paper_id):
         self._require_canonical()
@@ -562,8 +593,8 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
                 "references": [dict(r) for r in c.execute("SELECT * FROM literature_source_references WHERE paper_id=?", (canonical,))],
                 "identifiers": [dict(r) for r in c.execute("SELECT kind,value FROM literature_identifiers WHERE paper_id=?", (canonical,))],
                 "origins": [{**dict(r), "evidence": json.loads(r["evidence_json"])} for r in c.execute("SELECT * FROM literature_origins WHERE paper_id=? ORDER BY discovered_at", (canonical,))],
-                "metadata_evidence": [{"source": r["source"], "priority": r["priority"], "observed_at": r["observed_at"], **json.loads(r["payload_json"])} for r in c.execute("SELECT * FROM literature_metadata_evidence WHERE paper_id=? ORDER BY observed_at", (canonical,))],
-                "selected_fields": json.loads(c.execute("SELECT field_priority_json FROM literature_documents WHERE id=?", (canonical,)).fetchone()[0]),
+                "metadata_evidence": [{"id": r["id"], "source": r["source"], "priority": r["priority"], "observed_at": r["observed_at"], **json.loads(r["payload_json"])} for r in c.execute("SELECT * FROM literature_metadata_evidence WHERE paper_id=? ORDER BY observed_at", (canonical,))],
+                "selected_fields": {key: {**value, "selection_basis": "evidence_linked" if value.get("evidence_id") else "legacy_unlinked"} for key, value in json.loads(c.execute("SELECT field_priority_json FROM literature_documents WHERE id=?", (canonical,)).fetchone()[0]).items()},
                 "conflicts": [dict(r) for r in c.execute("SELECT legacy_id,reason,payload_json FROM literature_identity_conflicts WHERE legacy_id IN (SELECT alias FROM literature_paper_aliases WHERE paper_id=?)", (canonical,))],
                 "source_collections": [{"active": bool(r[0]), **json.loads(r[1])} for r in c.execute("SELECT s.active,s.payload_json FROM literature_source_collections s JOIN literature_source_memberships m ON m.source_collection_id=s.source_id JOIN literature_paper_aliases a ON a.alias=m.source_paper_id WHERE a.paper_id=?", (canonical,))],
             }
@@ -623,4 +654,5 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         result = {key: c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] for key, table in tables.items()}
         result["unresolved_records"] = [dict(r) for r in c.execute("SELECT legacy_id,reason FROM literature_identity_conflicts")]
         result["foreign_key_errors"] = [tuple(r) for r in c.execute("PRAGMA foreign_key_check")]
+        result["workflow_schema_version"] = c.execute("SELECT MAX(version) FROM literature_workflow_schema").fetchone()[0]
         return result

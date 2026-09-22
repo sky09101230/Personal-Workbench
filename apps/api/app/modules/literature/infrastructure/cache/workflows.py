@@ -6,7 +6,7 @@ import json
 from app.modules.literature.application.errors import WorkflowConflictError, WorkflowNotFoundError
 from app.modules.literature.domain.canonical import Ingestion, IdentityConflictError, compatible, identifiers, formal_doi
 from app.modules.literature.domain.models import Attachment, Paper
-from app.modules.literature.domain.workflow import UploadBatch, UploadItem, MetadataProposal, METADATA_FIELDS, metadata_patch
+from app.modules.literature.domain.workflow import UploadBatch, UploadItem, MetadataProposal, METADATA_FIELDS, metadata_patch, metadata_snapshot
 from app.modules.literature.infrastructure.cache.canonical import SQLiteCanonicalRepository, _id, _now, _json, _paper, _attachment
 
 
@@ -15,12 +15,11 @@ def _item(row):
 
 
 def _proposal(row):
-    return MetadataProposal(row['id'], row['paper_id'], row['source'], row['status'], json.loads(row['current_json']), json.loads(row['proposed_json']), tuple(json.loads(row['fields_changed_json'])), row['created_at'], row['resolved_at'], row['resolved_by'])
+    return MetadataProposal(row['id'], row['paper_id'], row['source'], row['status'], {'openalex_id': None, **json.loads(row['current_json'])}, json.loads(row['proposed_json']), tuple(json.loads(row['fields_changed_json'])), row['created_at'], row['resolved_at'], row['resolved_by'])
 
 
 def _metadata(paper):
-    data = asdict(paper)
-    return {field: list(data[field]) if field == 'authors' else data[field] for field in METADATA_FIELDS}
+    return metadata_snapshot(paper)
 
 
 class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
@@ -156,15 +155,26 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
         with self._connect() as c:
             c.execute('BEGIN IMMEDIATE')
             paper = self._editable_paper(c, paper_id)
-            candidate = replace(paper, **clean)
-            self._validate_identity(c, paper, candidate)
             current = _metadata(paper)
             changed = tuple(k for k,v in clean.items() if current[k] != v)
             if not changed:
                 raise ValueError('No metadata changes proposed')
-            proposal = MetadataProposal(_id('proposal'), paper.id, source.strip(), current_metadata=current, proposed_metadata=clean, fields_changed=changed, created_at=_now())
-            c.execute('INSERT INTO literature_metadata_proposals VALUES (?,?,?,?,?,?,?,?,?,?)', (proposal.id, paper.id, proposal.source, 'pending', _json(current), _json(clean), _json(changed), proposal.created_at, None, None))
-            return proposal
+            evidence_id = _id('evidence', _json([paper.id, 'proposal', source.strip(), current, clean]))
+            c.execute('INSERT OR IGNORE INTO literature_metadata_evidence VALUES (?,?,?,?,?,?)', (evidence_id, paper.id, 'proposal:' + source.strip(), 0, _json({'metadata': asdict(paper), 'evidence': {'proposed': clean, 'before': current}}), _now()))
+            proposal_id = self._queue_metadata_proposal(c, paper.id, source.strip(), current, clean, evidence_id, proposal_id=_id('proposal'))
+            return self._read_proposal(c, c.execute('SELECT * FROM literature_metadata_proposals WHERE id=?', (proposal_id,)).fetchone())
+
+    def _read_proposal(self, c, row):
+        proposal = _proposal(row)
+        evidence_ids = tuple(r[0] for r in c.execute('SELECT evidence_id FROM literature_proposal_evidence WHERE proposal_id=? ORDER BY evidence_id', (proposal.id,)))
+        conflict = None
+        if proposal.status == 'pending':
+            paper = self._editable_paper(c, proposal.paper_id)
+            try:
+                self._validate_identity(c, paper, replace(paper, **metadata_patch(proposal.proposed_metadata)))
+            except (ValueError, IdentityConflictError) as error:
+                conflict = str(error)
+        return replace(proposal, evidence_ids=evidence_ids, identity_conflict=conflict)
 
     def _editable_paper(self, c, paper_id):
         canonical = self._resolve(c, paper_id)
@@ -190,13 +200,13 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
         self._require_canonical()
         with self._connect() as c:
             row = c.execute('SELECT * FROM literature_metadata_proposals WHERE id=?', (proposal_id,)).fetchone()
-            return _proposal(row) if row else None
+            return self._read_proposal(c, row) if row else None
 
     def list_metadata_proposals(self, paper_id):
         self._require_canonical()
         with self._connect() as c:
             paper = self._editable_paper(c, paper_id)
-            return tuple(_proposal(r) for r in c.execute('SELECT * FROM literature_metadata_proposals WHERE paper_id=? ORDER BY created_at DESC,id', (paper.id,)))
+            return tuple(self._read_proposal(c, r) for r in c.execute('SELECT * FROM literature_metadata_proposals WHERE paper_id=? ORDER BY created_at DESC,id', (paper.id,)))
 
     def resolve_metadata_proposal(self, proposal_id, *, accept, edits=None):
         clean_edits = metadata_patch(edits) if edits is not None else {}
@@ -212,23 +222,53 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
             paper = self._editable_paper(c, proposal.paper_id)
             proposed = {**proposal.proposed_metadata, **clean_edits}
             changed = tuple(k for k,v in proposed.items() if _metadata(paper)[k] != v)
+            evidence_id = _id('evidence')
+            supporting = [r[0] for r in c.execute('SELECT evidence_id FROM literature_proposal_evidence WHERE proposal_id=? ORDER BY evidence_id', (proposal_id,))]
+            previous_choices = json.loads(c.execute('SELECT field_priority_json FROM literature_documents WHERE id=?', (paper.id,)).fetchone()[0])
             if accept:
                 if _metadata(paper) != proposal.current_metadata:
                     raise WorkflowConflictError('Proposal is stale; create a new proposal')
                 candidate = replace(paper, **metadata_patch(proposed))
                 self._validate_identity(c, paper, candidate)
                 priority = 100 if edits is not None else 95
-                priorities = json.loads(c.execute('SELECT field_priority_json FROM literature_documents WHERE id=?', (paper.id,)).fetchone()[0])
+                priorities = dict(previous_choices)
                 for key in changed:
-                    priorities[key] = {'priority': priority, 'source': 'review:' + proposal.source}
+                    priorities[key] = {'priority': priority, 'source': 'review:' + proposal.source, 'evidence_id': evidence_id, 'reviewed': True}
                 for kind,value in identifiers(candidate).items():
                     c.execute('INSERT OR IGNORE INTO literature_identifiers VALUES (?,?,?)', (kind,value,paper.id))
-                candidate = replace(candidate, metadata_status='complete' if candidate.title and candidate.authors and candidate.year else 'incomplete')
+                candidate = replace(candidate, metadata_status='conflict' if paper.metadata_status == 'conflict' else 'complete' if candidate.title and candidate.authors and candidate.year else 'incomplete')
                 c.execute('UPDATE literature_documents SET metadata_json=?,field_priority_json=?,updated_at=? WHERE id=?', (_json(asdict(candidate)), _json(priorities), _now(), paper.id))
-                evidence = {'metadata': asdict(candidate), 'evidence': {'proposal_id': proposal_id, 'before': proposal.current_metadata, 'after': _metadata(candidate), 'edits': clean_edits}}
-                c.execute('INSERT INTO literature_metadata_evidence VALUES (?,?,?,?,?,?)', (_id('evidence'),paper.id,'review:'+proposal.source,priority,_json(evidence),_now()))
+            evidence = {'metadata': asdict(candidate if accept else paper), 'evidence': {'proposal_id': proposal_id, 'decision': 'accepted' if accept else 'rejected', 'before': _metadata(paper), 'after': _metadata(candidate if accept else paper), 'edits': clean_edits, 'supporting_evidence_ids': supporting, 'previous_field_choices': previous_choices}}
+            c.execute('INSERT INTO literature_metadata_evidence VALUES (?,?,?,?,?,?)', (evidence_id,paper.id,'review:'+proposal.source,priority if accept else 0,_json(evidence),_now()))
             c.execute('UPDATE literature_metadata_proposals SET status=?,proposed_json=?,fields_changed_json=?,resolved_at=?,resolved_by=? WHERE id=?', ('accepted' if accept else 'rejected', _json(proposed), _json(changed), _now(), 'user', proposal_id))
-            return _proposal(c.execute('SELECT * FROM literature_metadata_proposals WHERE id=?', (proposal_id,)).fetchone())
+            return self._read_proposal(c, c.execute('SELECT * FROM literature_metadata_proposals WHERE id=?', (proposal_id,)).fetchone())
+
+    def confirm_metadata(self, paper_id, snapshot):
+        clean = metadata_patch(snapshot)
+        if set(clean) != set(METADATA_FIELDS):
+            raise ValueError('Complete current metadata snapshot required')
+        self._require_canonical()
+        with self._connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            paper = self._editable_paper(c, paper_id)
+            if clean != _metadata(paper):
+                raise WorkflowConflictError('Metadata changed; reload before confirming')
+            if paper.metadata_status == 'conflict':
+                raise WorkflowConflictError('Resolve identity conflict before confirming metadata')
+            if c.execute("SELECT 1 FROM literature_metadata_proposals WHERE paper_id=? AND status='pending'", (paper.id,)).fetchone():
+                raise WorkflowConflictError('Resolve pending proposals before confirming metadata')
+            self._validate_identity(c, paper, paper)
+            evidence_id = _id('evidence', _json([paper.id, 'user_confirmation', clean]))
+            priorities = json.loads(c.execute('SELECT field_priority_json FROM literature_documents WHERE id=?', (paper.id,)).fetchone()[0])
+            evidence = {'metadata': asdict(paper), 'evidence': {'decision': 'current_metadata_confirmed', 'before': clean, 'after': clean, 'reviewed_by': 'user', 'previous_field_choices': priorities}}
+            c.execute('INSERT OR IGNORE INTO literature_metadata_evidence VALUES (?,?,?,?,?,?)', (evidence_id, paper.id, 'user_confirmation', 100, _json(evidence), _now()))
+            for field, value in clean.items():
+                if value not in (None, '', [], ()):
+                    priorities[field] = {'priority': 100, 'source': 'user_confirmation', 'evidence_id': evidence_id, 'reviewed': True}
+            for kind, value in identifiers(paper).items():
+                c.execute('INSERT OR IGNORE INTO literature_identifiers VALUES (?,?,?)', (kind, value, paper.id))
+            c.execute('UPDATE literature_documents SET field_priority_json=? WHERE id=?', (_json(priorities), paper.id))
+            return {'paper_id': paper.id, 'evidence_id': evidence_id, 'metadata_review_status': 'reviewed'}
 
     def import_selected_item(self, changes):
         self._require_canonical()

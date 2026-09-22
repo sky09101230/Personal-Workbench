@@ -27,6 +27,21 @@ class EditAcceptRequest(BaseModel):
     edits: MetadataPatchRequest
 
 
+class MetadataConfirmationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    snapshot: MetadataPatchRequest
+
+
+@router.post("/papers/{paper_id}/metadata/confirm")
+def confirm_metadata(paper_id: str, payload: MetadataConfirmationRequest, service=Depends(get_review_service)):
+    try:
+        return service.confirm_metadata(paper_id, payload.snapshot.model_dump(exclude_unset=True))
+    except IdentityConflictError:
+        raise
+    except ValueError as error:
+        raise HTTPException(422, detail={"code": "invalid_metadata_snapshot", "reason": str(error)}) from error
+
+
 @router.get("/papers/{paper_id}/metadata/proposals", response_model=ProposalListResponse)
 def list_proposals(paper_id: str, service=Depends(get_review_service)):
     return {"proposals": [asdict(p) for p in service.list_proposals(paper_id)]}

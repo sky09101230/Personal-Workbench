@@ -16,6 +16,7 @@ class MetadataPatchRequest(BaseModel):
     year: Annotated[StrictInt, Field(ge=1000, le=3000)] | None = None
     doi: str | None = Field(default=None, max_length=1000)
     arxiv_id: str | None = Field(default=None, max_length=1000)
+    openalex_id: str | None = Field(default=None, max_length=1000)
     journal: str | None = Field(default=None, max_length=1000)
     abstract: str | None = Field(default=None, max_length=30000)
 

@@ -2,12 +2,12 @@ import { literatureLabel } from "../labels";
 import { useEffect, useState } from "react";
 import { deleteJson, patchJson } from "../../../core/api";
 import { getJson, postJson, workflowError } from "../api";
-import type { AttachmentsResponse, CollectionsResponse, LiteratureUserNote, NotesResponse, PaperDetailResponse, UserNoteListResponse, WorkflowResult } from "../types";
+import type { AttachmentsResponse, CollectionsResponse, LiteratureUserNote, MetadataProvenance, NotesResponse, PaperDetailResponse, UserNoteListResponse, WorkflowResult } from "../types";
 import { ImportPanel } from "./ImportPanel";
 import { LiteratureAIAssistant } from "./LiteratureAIAssistant";
 import { MetadataReview } from "./MetadataReview";
 
-type Provenance = { references: Record<string, unknown>[]; origins: Record<string, unknown>[]; source_collections: unknown[]; metadata_evidence: unknown[]; conflicts: unknown[]; selected_fields: unknown; identifiers: unknown[] };
+type Provenance = MetadataProvenance & { references: Record<string, unknown>[]; origins: Record<string, unknown>[]; source_collections: unknown[]; conflicts: unknown[]; identifiers: unknown[] };
 function OriginEvidence({ evidence }: { evidence: unknown }) {
   const values = evidence && typeof evidence === "object" ? evidence as Record<string, unknown> : {};
   return <><dl>{["recommendation_reason", "ai_summary", "selection_rank", "overall_score", "run_key", "method", "filename"].filter((field) => values[field] != null).map((field) => <div key={field}><dt>{literatureLabel(field)}</dt><dd>{String(values[field])}</dd></div>)}</dl><details><summary>完整入库依据</summary><pre>{JSON.stringify(evidence, null, 2)}</pre></details></>;
@@ -47,7 +47,7 @@ export function PaperDetail({ paperId, onBack, onChanged }: { paperId: string; o
         <dl className="wb-metadata">{["doi", "arxiv_id", "openalex_id", "abstract"].map((field) => <div key={field}><dt>{literatureLabel(field)}</dt><dd>{String(detail.paper[field as "doi"] || "未记录")}</dd></div>)}</dl>
         <div className="wb-filters"><label>阅读状态<select disabled={busy} value={detail.paper.reading_status} onChange={(e) => void act(async () => { await patchJson(`${base}/state`, { reading_status: e.target.value }); refresh(); })}>{["inbox", "saved", "reading", "read", "archived"].map((value) => <option key={value} value={value}>{literatureLabel(String(value))}</option>)}</select></label><label>标签（使用英文逗号分隔）<input value={tags} onChange={(e) => setTags(e.target.value)} /></label><button disabled={busy} onClick={() => void act(async () => { await patchJson(`${base}/state`, { tags: tags.split(",").map((value) => value.trim()).filter(Boolean) }); refresh(); })}>保存标签</button></div>
         <details><summary>本地集合归属</summary>{!collections.length && <p>可在文献库的筛选区域创建集合。</p>}{collections.map((collection) => <label className="wb-check" key={collection.id}><input type="checkbox" disabled={busy} checked={detail.collections.some((c) => c.id === collection.id)} onChange={(e) => void act(async () => { await patchJson(`${base}/collections/${encodeURIComponent(collection.id)}`, { present: e.target.checked }); refresh(); })} />{collection.name}</label>)}</details>
-        <MetadataReview paper={detail.paper} onChanged={refresh} />
+        <MetadataReview paper={detail.paper} provenance={provenance} onChanged={refresh} />
         <details><summary>元数据依据与冲突</summary><pre>{JSON.stringify({ selected_fields: provenance?.selected_fields, metadata_evidence: provenance?.metadata_evidence, conflicts: provenance?.conflicts, identifiers: provenance?.identifiers }, null, 2)}</pre></details>
         <div className="wb-actions">{removing ? <><span>从文献库移除？保留的数据仍可恢复。</span><button disabled={busy} onClick={() => void act(async () => { await deleteJson(base); onChanged(); onBack(); })}>确认移除</button><button onClick={() => setRemoving(false)}>取消</button></> : <button onClick={() => setRemoving(true)}>从文献库移除</button>}</div>
       </>}

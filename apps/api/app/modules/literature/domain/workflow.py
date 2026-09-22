@@ -67,6 +67,8 @@ class MetadataProposal:
     created_at: str = ''
     resolved_at: str | None = None
     resolved_by: str | None = None  # 'user', 'auto'
+    evidence_ids: tuple[str, ...] = ()
+    identity_conflict: str | None = None
 
 
 @dataclass(frozen=True)
@@ -91,7 +93,11 @@ class BatchMaterializationResult:
     results: tuple[MaterializationResult, ...] = ()
 
 
-METADATA_FIELDS = ("title", "authors", "year", "journal", "doi", "arxiv_id", "abstract")
+METADATA_FIELDS = ("title", "authors", "year", "journal", "doi", "arxiv_id", "openalex_id", "abstract")
+
+
+def metadata_snapshot(paper) -> dict:
+    return {field: list(getattr(paper, field)) if field == "authors" else getattr(paper, field) for field in METADATA_FIELDS}
 
 
 def metadata_patch(values: dict) -> dict:
@@ -115,5 +121,6 @@ def metadata_patch(values: dict) -> dict:
             text = value.strip() if isinstance(value, str) else None
             if name == "title" and not text:
                 raise ValueError("Title must not be blank")
-            result[name] = normalize_identifier(text, "doi" if name == "doi" else "arxiv") if name in {"doi", "arxiv_id"} else text or None
+            kinds = {"doi": "doi", "arxiv_id": "arxiv", "openalex_id": "openalex"}
+            result[name] = normalize_identifier(text, kinds[name]) if name in kinds else text or None
     return result

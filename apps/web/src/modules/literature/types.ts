@@ -36,6 +36,7 @@ export type Paper = {
   openalex_id?: string | null;
   pdf_available: boolean;
   metadata_status: string;
+  metadata_review_status?: string;
 };
 
 export type Note = {
@@ -179,6 +180,7 @@ export type MetadataPatch = {
   year?: number | null;
   doi?: string | null;
   arxiv_id?: string | null;
+  openalex_id?: string | null;
   journal?: string | null;
   abstract?: string | null;
 };
@@ -187,6 +189,11 @@ export type MetadataProposal = {
   status: "pending" | "accepted" | "rejected";
   current_metadata: MetadataPatch; proposed_metadata: MetadataPatch;
   fields_changed: string[]; created_at: string;
+  evidence_ids: string[]; identity_conflict: string | null;
+};
+export type MetadataProvenance = {
+  metadata_evidence: { id: string; source: string; observed_at: string; metadata: MetadataPatch; evidence: Record<string, unknown> }[];
+  selected_fields: Record<string, { source: string; evidence_id?: string; reviewed?: boolean; selection_basis?: string }>;
 };
 export type UploadItem = {
   id: string; filename: string; status: string;

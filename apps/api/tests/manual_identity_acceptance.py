@@ -47,8 +47,15 @@ def main():
         snapshot = fingerprints(copy)
         assert snapshot == before, 'Source changed during backup; rerun against a stable snapshot'
         repository = SQLiteLiteratureWorkflowRepository(f'sqlite:///{copy.resolve()}')
+        repository.ensure_schema()
+        upgraded = fingerprints(copy)
+        for name, original in snapshot.items():
+            if name not in {'literature_workflow_schema', 'literature_maintenance_actions'}:
+                assert upgraded[name] == original, f'Schema upgrade changed historical rows in {name}'
+        snapshot = upgraded
+        copied_report = audit_identity(copy)
         page = repository.list_papers(limit=100)
-        assert audit_identity(copy) == real_report
+        assert audit_identity(copy) == copied_report
         assert fingerprints(copy) == snapshot, 'Audit or repository read mutated existing rows'
         eligible = next((p for p in page.items if p.doi and p.year and p.authors and len(p.title) >= 12), None)
         assert eligible is not None, 'No eligible real paper for weak/strong replay acceptance'

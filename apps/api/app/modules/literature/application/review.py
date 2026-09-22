@@ -7,6 +7,9 @@ from app.modules.literature.application.ports import LiteratureWorkflowRepositor
 class MetadataReviewService:
     repository: LiteratureWorkflowRepository
 
+    def confirm_metadata(self, paper_id, snapshot):
+        return self.repository.confirm_metadata(paper_id, snapshot)
+
     def create_proposal(self, paper_id, source, proposed_metadata):
         return self.repository.create_metadata_proposal(paper_id, source, proposed_metadata)
 

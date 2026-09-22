@@ -5,6 +5,8 @@ Run from repo root after frontend build:
 Open http://127.0.0.1:8013/literature. Does not read or mutate the real library.
 """
 import io
+import argparse
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "apps/api"))
 session = Path(tempfile.mkdtemp(prefix="frontend-stage3-", dir=ROOT / ".venv/tmp"))
 os.environ["DATABASE_URL"] = f"sqlite:///{session / 'acceptance.db'}"
+os.environ["LITERATURE_VAULT_ROOT"] = str(session / 'vault')
 for name in ("ZOTERO_USER_ID", "ZOTERO_API_KEY", "DEEPSEEK_API_KEY", "OPENALEX_API_KEY", "WORKBENCH_AGENT_TOKEN"):
     os.environ[name] = ""
 
@@ -83,6 +86,10 @@ client = TestClient(app)
 for changes in ({"journal": "Accepted Journal"}, {"abstract": "Reject this candidate"}, {"year": 2026}, {"title": "Stale candidate title"}):
     response = client.post(f"/api/literature/papers/{paper_id}/metadata/proposals", json={"source": "acceptance", "proposed_metadata": changes})
     assert response.status_code == 201, response.text
+source_paper = Paper('fixture:evidence', 'Evidence review acceptance', ('Review Author',), year=2026, doi='10.1234/evidence')
+evidence_paper_id = repository.ingest(Ingestion(source_paper, 'zotero_import', source_paper.id, source='zotero')).paper_id
+repository.ingest(Ingestion(replace(source_paper, title='Reviewed source title'), 'zotero_import', source_paper.id, {'library_version': '2'}, 999, 'zotero'))
+repository.ingest(Ingestion(Paper('', 'Another identifier owner', doi='10.1234/owned'), 'manual', 'owned'))
 radar = json.loads((ROOT / "apps/api/tests/fixtures/literature_radar_v2.json").read_text(encoding="utf-8"))
 assert client.post("/api/news/papers/research/ingest", json=radar).status_code == 200
 dist = ROOT / "apps/web/dist"
@@ -96,4 +103,8 @@ def frontend(path: str):
 
 print(f"Acceptance files: {session}", flush=True)
 print("Fixture providers only; no external API calls.", flush=True)
-uvicorn.run(app, host="127.0.0.1", port=8013, log_level="warning")
+print(f"Evidence review paper: {evidence_paper_id}", flush=True)
+parser = argparse.ArgumentParser()
+parser.add_argument('--port', type=int, default=8013)
+args = parser.parse_args()
+uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

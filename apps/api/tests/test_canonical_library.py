@@ -45,7 +45,9 @@ def test_preprint_formal_merge_and_identifier_correction_gate(repository):
     first = repository.ingest(ingest(p))
     formal = replace(paper("B"), arxiv_id="2609.12345")
     assert repository.ingest(ingest(formal, "formal")).paper_id == first.paper_id
-    assert repository.get_paper(first.paper_id).paper.doi == formal.doi
+    assert repository.get_paper(first.paper_id).paper.doi == p.doi
+    assert repository.get_paper(first.paper_id).paper.metadata_review_status == 'needs_review'
+    assert {'kind': 'doi', 'value': formal.doi} not in repository.provenance(first.paper_id)['identifiers']
     with pytest.raises(IdentityConflictError, match="correction requires"):
         repository.ingest(ingest(replace(formal, arxiv_id="2609.99999"), "correction"))
 

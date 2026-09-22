@@ -2,7 +2,7 @@ import { literatureLabel } from "../labels";
 import { useState } from "react";
 import type { MetadataPatch } from "../types";
 
-export const metadataFields = ["title", "authors", "year", "journal", "doi", "arxiv_id", "abstract"] as const;
+export const metadataFields = ["title", "authors", "year", "journal", "doi", "arxiv_id", "openalex_id", "abstract"] as const;
 export function metadataText(value: unknown): string {
   return Array.isArray(value) ? value.join("; ") : value == null ? "" : String(value);
 }

@@ -3,6 +3,7 @@ const labels: Record<string, string> = {
   library: "文献库", radar: "发现雷达", import: "导入",
   inbox: "待整理", saved: "已收藏", reading: "阅读中", read: "已读", archived: "已归档",
   incomplete: "待补全", complete: "完整", conflict: "存在冲突",
+  unreviewed: "尚未完整审核", reviewed: "已人工审核", user_confirmation: "用户确认", upload_review: "上传审核", radar_evidence: "雷达发现依据",
   title: "标题", authors: "作者", year: "年份", journal: "期刊", tag: "标签", doi: "DOI", arxiv_id: "arXiv ID", openalex_id: "OpenAlex ID", abstract: "摘要",
   zotero: "Zotero", zotero_import: "Zotero 导入", zotero_selective: "Zotero 选择性导入", manual_pdf: "PDF 上传", zotero_materialization: "Zotero PDF 本地化", legacy_recovery: "历史数据恢复",
   staging: "暂存中", reviewing: "审核中", confirmed: "已入库", cancelled: "已取消", ready: "待确认", needs_review: "待审核", already_confirmed: "已入库，无需重复", failed: "失败",
@@ -14,4 +15,9 @@ const labels: Record<string, string> = {
   short_text: "可提取文字较少，请人工核对", missing_title: "未提取到标题", missing_doi: "未提取到 DOI", missing_authors: "未提取到作者", file_date_is_not_publication_date: "文件日期不等于出版年份", identifier_requires_review: "标识符需要人工核对", multiple_doi_candidates: "提取到多个 DOI 候选",
   identity_conflict: "文献标识冲突，请核对 DOI / arXiv", source_item_unavailable: "无法读取来源条目", pdf_info: "PDF 属性", text_scan: "正文提取", first_page: "首页提取", pdf_file_date: "文件日期", low: "低", medium: "中", high: "高",
 };
-export function literatureLabel(value: string): string { return labels[value] ?? value; }
+export function literatureLabel(value: string): string {
+  if (value.startsWith("source:")) return `${literatureLabel(value.slice(7))} 来源建议`;
+  if (value.startsWith("review:")) return `${literatureLabel(value.slice(7))} 审核`;
+  if (value.startsWith("proposal:")) return `${literatureLabel(value.slice(9))} 修订建议`;
+  return labels[value] ?? value;
+}

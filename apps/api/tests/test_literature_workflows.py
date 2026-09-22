@@ -192,7 +192,10 @@ def test_proposal_other_identity_and_concurrent_decision(workflow):
     repository,_,_,review,_=workflow
     a=repository.ingest(Ingestion(Paper('','First metadata record'),'manual','a')).paper_id
     repository.ingest(Ingestion(Paper('','Second metadata record',doi='10.1234/owned'),'manual','b'))
-    with pytest.raises(IdentityConflictError): review.create_proposal(a,'manual',{'doi':'10.1234/owned'})
+    conflict = review.create_proposal(a,'manual',{'doi':'10.1234/owned'})
+    assert conflict.identity_conflict
+    with pytest.raises(IdentityConflictError): review.accept_proposal(conflict.id)
+    assert review.reject_proposal(conflict.id).status == 'rejected'
     proposal=review.create_proposal(a,'manual',{'abstract':'Reviewed evidence'})
     def accept():
         try: return review.accept_proposal(proposal.id).status
