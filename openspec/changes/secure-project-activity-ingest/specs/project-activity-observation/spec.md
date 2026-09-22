@@ -3,7 +3,7 @@
 ### Requirement: ProjectActivity exposes minimal ingest and query APIs
 The system SHALL expose device heartbeat, source observation, run observation, and event recording through POST endpoints and project sources, runs, and events through GET endpoints under `/api/project-activity`. The four ingest POST endpoints SHALL require `Authorization: Bearer <token>` validated against the configured `WORKBENCH_AGENT_TOKEN`; the GET query endpoints remain public.
 
-#### Scenario: Authenticated ingest observations through the API
+#### Scenario: Ingest observations through the API
 - **WHEN** valid JSON is posted with the correct bearer token to `/devices/heartbeat`, `/sources/observe`, `/runs/observe`, or `/events`
 - **THEN** the corresponding application use case runs and a JSON representation of the resulting domain object is returned
 
