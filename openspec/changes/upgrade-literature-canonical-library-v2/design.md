@@ -10,6 +10,16 @@ Use an additive canonical repository implementing existing Literature ports, ret
 
 ## Decisions
 
+### Stage 3 frontend information architecture
+
+Library is the default landing view; native collections are filters and explicit membership controls, not a connector tree. A paper opens in a dedicated detail area, reachable through the existing `?paper=` link and browser history. All six detail sections remain available at narrow widths. Sources display external identities; Origins display ingestion/discovery evidence separately.
+
+The Import center keeps a staged PDF batch mounted across tab changes and stores its opaque batch ID for explicit resume after reload. Confirmation results are inspected per item; failed items remain editable, cancelled items are skipped and successful siblings stay saved. Zotero browsing uses connector collection/item IDs without parsing, imports only checked rows, and offers explicit local PDF materialization with per-item results.
+
+Metadata decisions compare current values with the proposal and retain the original snapshot. Stale pending proposals disable acceptance and direct the user to reject/recreate; the backend remains authoritative for concurrent changes and identity conflicts. No global proposal queue or enrichment endpoint is invented.
+
+PLAB reference: read the existing local reference commit's `templates/box_upload/library.html`, `metadata_review_detail.html` and Literature route structure. Adopt summary/filter/list, explicit review and canonical detail workflows; retain Workbench React components and restrained existing styling, without copying Django markup or backend behavior. Browser mutation acceptance uses a disposable database, production API routes and fixture external providers via `apps/web/scripts/literature-acceptance-server.py`.
+
 ### Stage 1/2 continuation supersedes automatic migration and immediate-only uploads
 
 Canonical data migration must now be explicit (API/CLI), with a read-only status probe and a 409 migration-required response until complete. DDL upgrades are independently versioned for already-canonical databases; a legacy data marker is not proof that workflow tables exist. Dry-run operates on a temporary copy before any source DDL or data mutation. Reconciliation is recorded once and only targets original migrated aliases still in inbox, excluding explicit user state edits.

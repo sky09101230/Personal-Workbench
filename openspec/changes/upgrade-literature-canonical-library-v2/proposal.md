@@ -27,6 +27,10 @@ Zotero currently acts as the effective Literature database: source deletion remo
 
 ## Impact
 
+### Stage 3 frontend product refactor (2026-09-22)
+
+On `gemini/literature-v2-frontend`, replace the three-pane connector browser with a canonical Library summary, filters and list. Add the frozen staged upload, selective Zotero import/localization and metadata proposal workflows. Open canonical paper detail with distinct Metadata, Files, Sources, Origins, Notes and AI sections. Keep backend/API contracts frozen and retain existing Radar and Reader behavior.
+
 ### Backend workflow continuation (2026-09-21)
 
 Stage 1 hardens explicit migration, source/origin separation, saved-state reconciliation and staged storage. Stage 2 adds reviewable PDF batches, metadata proposals, selective Zotero imports and bounded PDF materialization. This continuation is backend-only on `claude/literature-v2-backend-workflows`; it neither changes frontend UI nor merges another branch. It extends the canonical-literature-library capability below; DOI lookup/AI metadata generation are not introduced by the local extraction workflow.

@@ -31,6 +31,9 @@ export type Paper = {
   external_ref: ExternalReference | null;
   reading_status: "inbox" | "saved" | "reading" | "read" | "archived";
   sources: string[];
+  origins: string[];
+  arxiv_id?: string | null;
+  openalex_id?: string | null;
   pdf_available: boolean;
   metadata_status: string;
 };
@@ -169,3 +172,27 @@ export type PdfSelection = {
   contextBefore: string;
   contextAfter: string;
 };
+
+export type MetadataPatch = {
+  title?: string;
+  authors?: string[];
+  year?: number | null;
+  doi?: string | null;
+  arxiv_id?: string | null;
+  journal?: string | null;
+  abstract?: string | null;
+};
+export type MetadataProposal = {
+  id: string; paper_id: string; source: string;
+  status: "pending" | "accepted" | "rejected";
+  current_metadata: MetadataPatch; proposed_metadata: MetadataPatch;
+  fields_changed: string[]; created_at: string;
+};
+export type UploadItem = {
+  id: string; filename: string; status: string;
+  extracted_metadata: Record<string, { value: unknown; source: string; confidence: string }>;
+  candidate_metadata: MetadataPatch; warnings: string[]; target_paper_id?: string; error?: string;
+};
+export type UploadBatch = { id: string; status: string; items: UploadItem[] };
+export type WorkflowResult = { status: string; paper_id?: string; error?: string; item_id?: string; item_key?: string };
+export type ZoteroItem = Paper & { import_status: string; canonical_id: string | null };

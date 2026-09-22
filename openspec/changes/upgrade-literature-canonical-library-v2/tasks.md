@@ -50,3 +50,10 @@
 - [x] 8.4 Complete selected Zotero import and bounded PDF materialization; test remote resource loading, local preference, size limits and cleanup.
 - [x] 8.5 Freeze A–G API contracts in docs/contracts/literature-v2-api.md; verify OpenAPI schemas and endpoint tests.
 - [x] 8.6 Run full backend pytest, compileall, strict OpenSpec validation, diff/secret checks and existing-DB copy upgrade; commit/push claude/literature-v2-backend-workflows without UI changes or merges.
+
+## 9. Stage 3 frontend product refactor
+
+- [x] 9.1 Replace the connector browser layout with canonical Library summary, search, filters and paper list; preserve native organization.
+- [x] 9.2 Implement staged multi-PDF review/confirm/cancel and selective Zotero import/localization using the frozen contract.
+- [x] 9.3 Implement metadata proposal review and canonical detail with separate Metadata, Files, Sources, Origins, Notes and AI.
+- [x] 9.4 Verify Reader/AI/Notes/Radar, desktop and narrow layouts, error states, frontend build/typecheck and browser console; commit and push the frontend branch without merging main. See docs/handshake/literature-v2-stage3-acceptance.md.

@@ -130,7 +130,8 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
         viewport,
         transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
       });
-      const textContent = await page.getTextContent();
+      // Observe render rejection immediately: resize/navigation can cancel it while text loads.
+      const [, textContent] = await Promise.all([renderTask.promise, page.getTextContent()]);
       const renderedItems = textContent.items.flatMap((item, index) => {
         if (!("str" in item) || !("transform" in item) || !item.str) return [];
         const transform = Util.transform(viewport.transform, item.transform);
@@ -151,7 +152,6 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
       });
       pageTextRef.current = normalizeText(renderedItems.map((item) => item.text).join(" "));
       if (!cancelled) setTextItems(renderedItems);
-      await renderTask.promise;
     };
     void render().catch((renderError: unknown) => {
       if (!cancelled && !(renderError instanceof Error && renderError.name === "RenderingCancelledException")) {
@@ -229,7 +229,7 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
   return (
     <main className={`pdf-reader ${sidebarOpen ? "notes-open" : ""}`}>
       <header className="reader-header">
-        <a className="reader-back" href="/"><ArrowLeft size={16} aria-hidden="true" />Library</a>
+        <a className="reader-back" href={`/literature?paper=${encodeURIComponent(paperId)}`}><ArrowLeft size={16} aria-hidden="true" />Paper detail</a>
         <div className="reader-title">
           <strong>{detail?.paper.title ?? "PDF Reader"}</strong>
           <span>{document ? `${document.numPages} pages` : "Loading document"}</span>
@@ -269,7 +269,7 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
       {sidebarOpen ? (
         <aside className="reader-notes reader-sidebar" aria-label="Paper reading sidebar">
           <div className="reader-sidebar-tabs" role="tablist">
-            <button className={sidebarTab === "zotero" ? "active" : ""} type="button" onClick={() => setSidebarTab("zotero")}>Zotero Notes</button>
+            <button className={sidebarTab === "zotero" ? "active" : ""} type="button" onClick={() => setSidebarTab("zotero")}>Source Notes</button>
             <button className={sidebarTab === "my-notes" ? "active" : ""} type="button" onClick={() => setSidebarTab("my-notes")}>My Notes</button>
             <button className={sidebarTab === "ai" ? "active" : ""} type="button" onClick={() => setSidebarTab("ai")}>AI Assistant</button>
           </div>
@@ -277,10 +277,10 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
             {sidebarTab === "zotero" ? (
               notes.length > 0 ? notes.map((note) => (
                 <article className="reader-note-card" key={note.id}>
-                  <span>{note.kind === "annotation" ? `Annotation${note.page_label ? ` · p. ${note.page_label}` : ""}` : "Zotero Note"}</span>
+                  <span>{note.kind === "annotation" ? `Annotation${note.page_label ? ` · p. ${note.page_label}` : ""}` : "Source Note"}</span>
                   <p>{plainNoteText(note.content) || "Empty note"}</p>
                 </article>
-              )) : <ReaderState title="No Zotero Notes" detail="This paper has no synced Zotero Notes." />
+              )) : <ReaderState title="No source notes" detail="This paper has no imported source notes." />
             ) : null}
             {sidebarTab === "my-notes" ? (
               <div className="my-notes">
