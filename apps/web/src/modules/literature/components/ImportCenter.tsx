@@ -1,3 +1,4 @@
+import { literatureLabel } from "../labels";
 import { useEffect, useState } from "react";
 import { getJson, postJson, uploadPdf, workflowError } from "../api";
 import { patchJson } from "../../../core/api";
@@ -7,8 +8,8 @@ import { MetadataForm, metadataText } from "./MetadataForm";
 const batchStorage = "workbench.literature.upload-batch";
 export function ImportCenter({ providerReady, onImported }: { providerReady: boolean; onImported: (id: string) => void }) {
   const [mode, setMode] = useState<"pdf" | "zotero">("pdf");
-  return <div className="wb-import"><h2>Import into your Library</h2><p>Review PDFs or select papers from a connector. Workbench owns the saved paper and its research history.</p>
-    <nav className="wb-subtabs" aria-label="Import methods"><button aria-pressed={mode === "pdf"} onClick={() => setMode("pdf")}>PDF upload</button><button aria-pressed={mode === "zotero"} onClick={() => setMode("zotero")}>Zotero connector</button></nav>
+  return <div className="wb-import"><h2>导入到文献库</h2><p>审核 PDF 或选择外部连接器中的文献。保存后的文献与研究记录由 Workbench 管理。</p>
+    <nav className="wb-subtabs" aria-label="导入方式"><button aria-pressed={mode === "pdf"} onClick={() => setMode("pdf")}>上传 PDF</button><button aria-pressed={mode === "zotero"} onClick={() => setMode("zotero")}>Zotero 连接器</button></nav>
     <div hidden={mode !== "pdf"}><PdfBatch onImported={onImported} /></div>
     {mode === "zotero" && <ZoteroImport providerReady={providerReady} onImported={onImported} />}
   </div>;
@@ -31,13 +32,13 @@ function PdfBatch({ onImported }: { onImported: (id: string) => void }) {
   const stage = async (files: File[]) => {
     if (!files.length) return;
     await perform(async () => {
-      if (files.length + (batch?.items.length ?? 0) > 50) throw new Error("A batch supports at most 50 PDFs.");
-      if (files.some((file) => file.size > 50 * 1024 * 1024 || !file.name.toLowerCase().endsWith(".pdf"))) throw new Error("Select PDF files up to 50 MiB each.");
+      if (files.length + (batch?.items.length ?? 0) > 50) throw new Error("一个批次最多包含 50 个 PDF。");
+      if (files.some((file) => file.size > 50 * 1024 * 1024 || !file.name.toLowerCase().endsWith(".pdf"))) throw new Error("请选择 PDF 文件，每个不超过 50 MiB。");
       const current = batch ?? await postJson<UploadBatch>("/api/literature/uploads/batches");
       remember(current);
       const failures: string[] = [];
       for (const [index, file] of files.entries()) {
-        setProgress(`Staging ${index + 1}/${files.length}: ${file.name}`);
+        setProgress(`正在暂存 ${index + 1}/${files.length}：${file.name}`);
         try { await uploadPdf<UploadItem>(`/api/literature/uploads/batches/${encodeURIComponent(current.id)}/files?${new URLSearchParams({ filename: file.name })}`, file); }
         catch (e) { failures.push(`${file.name}: ${workflowError(e)}`); }
       }
@@ -46,24 +47,24 @@ function PdfBatch({ onImported }: { onImported: (id: string) => void }) {
     });
   };
   const closed = batch?.status === "confirmed" || batch?.status === "cancelled";
-  return <section><h3>1. Stage PDFs → 2. Review metadata → 3. Confirm</h3><p>Nothing enters Library until you confirm. Extraction reads PDF metadata and the first three pages; check all suggested values.</p>
-    {!batch && recoverId && <p>An upload batch is available to resume. <button disabled={busy} onClick={() => void perform(() => refresh(recoverId))}>Resume staged batch</button><button disabled={busy} onClick={() => { localStorage.removeItem(batchStorage); setRecoverId(null); }}>Dismiss resume link</button></p>}
-    {!closed && <label className="wb-upload">Select PDFs · up to 50 files, 50 MiB each<input aria-label="PDF files" type="file" accept="application/pdf,.pdf" multiple disabled={busy || (!!recoverId && !batch)} onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void stage(files); }} /></label>}
+  return <section><h3>1. 暂存 PDF → 2. 审核元数据 → 3. 确认入库</h3><p>确认前不会写入正式文献库。系统提取 PDF 元数据和前三页内容，请核对候选信息。</p>
+    {!batch && recoverId && <p>有一个上传批次可继续处理。 <button disabled={busy} onClick={() => void perform(() => refresh(recoverId))}>继续暂存批次</button><button disabled={busy} onClick={() => { localStorage.removeItem(batchStorage); setRecoverId(null); }}>忽略恢复入口</button></p>}
+    {!closed && <label className="wb-upload">选择 PDF · 最多 50 个文件，每个不超过 50 MiB<input aria-label="PDF 文件" type="file" accept="application/pdf,.pdf" multiple disabled={busy || (!!recoverId && !batch)} onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void stage(files); }} /></label>}
     {progress && <p role="status">{progress}</p>}{error && <p className="wb-error" role="alert">{error}</p>}
-    {batch && <><div className="wb-section-heading"><h3>Batch · {batch.status}</h3><span>{batch.items.length} files</span></div>
-      {batch.items.map((item) => <article className="wb-review-item" key={item.id}><div className="wb-section-heading"><h4>{item.filename}</h4><span className="wb-badge">{item.status}</span></div>
-        <p>{item.candidate_metadata.title || "Title required"}</p>
-        <dl>{Object.entries(item.candidate_metadata).filter(([field]) => field !== "title").map(([field, value]) => <div key={field}><dt>{field.replaceAll("_", " ")}</dt><dd>{metadataText(value) || "Not recorded"}</dd></div>)}</dl>
-        {!!item.warnings.length && <details><summary className="wb-warning">Extraction warnings · {item.warnings.length}</summary><p>These describe the original extraction; your reviewed values are shown above.</p>{item.warnings.map((warning, i) => <p className="wb-warning" key={i}>{warning.replaceAll("_", " ")}</p>)}</details>}{item.error && <p role="alert">{item.error}</p>}
-        <details><summary>Extracted evidence</summary><dl>{Object.entries(item.extracted_metadata).map(([field, evidence]) => <div key={field}><dt>{field}</dt><dd>{metadataText(evidence.value)} <small>· {evidence.source} · confidence {evidence.confidence}</small></dd></div>)}</dl></details>
-        {!closed && !["confirmed", "cancelled"].includes(item.status) && <><div className="wb-actions"><button disabled={busy} onClick={() => setEditing(item.id)}>Review / edit metadata</button><button disabled={busy} onClick={() => void perform(async () => { await postJson(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(item.id)}/cancel`); await refresh(batch.id); })}>Cancel file</button></div>
+    {batch && <><div className="wb-section-heading"><h3>批次 · {literatureLabel(batch.status)}</h3><span>{batch.items.length} 个文件</span></div>
+      {batch.items.map((item) => <article className="wb-review-item" key={item.id}><div className="wb-section-heading"><h4>{item.filename}</h4><span className="wb-badge">{literatureLabel(item.status)}</span></div>
+        <p>{item.candidate_metadata.title || "需要填写标题"}</p>
+        <dl>{Object.entries(item.candidate_metadata).filter(([field]) => field !== "title").map(([field, value]) => <div key={field}><dt>{literatureLabel(field)}</dt><dd>{metadataText(value) || "未记录"}</dd></div>)}</dl>
+        {!!item.warnings.length && <details><summary className="wb-warning">提取提示 · {item.warnings.length}</summary><p>以下为原始提取时的提示；上方显示的是审核后的信息。</p>{item.warnings.map((warning, i) => <p className="wb-warning" key={i}>{literatureLabel(warning)}</p>)}</details>}{item.error && <p role="alert">{item.error}</p>}
+        <details><summary>原始提取依据</summary><dl>{Object.entries(item.extracted_metadata).map(([field, evidence]) => <div key={field}><dt>{field}</dt><dd>{metadataText(evidence.value)} <small>· {literatureLabel(evidence.source)} · 置信度：{literatureLabel(evidence.confidence)}</small></dd></div>)}</dl></details>
+        {!closed && !["confirmed", "cancelled"].includes(item.status) && <><div className="wb-actions"><button disabled={busy} onClick={() => setEditing(item.id)}>审核 / 编辑元数据</button><button disabled={busy} onClick={() => void perform(async () => { await postJson(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(item.id)}/cancel`); await refresh(batch.id); })}>取消此文件</button></div>
           {editing === item.id && <MetadataForm key={`${item.id}-${JSON.stringify(item.candidate_metadata)}`} initial={item.candidate_metadata} busy={busy} onCancel={() => setEditing(null)} onSave={(patch) => void perform(async () => { await patchJson(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(item.id)}`, patch); await refresh(batch.id); setEditing(null); })} />}</>}
-        {item.target_paper_id && <button onClick={() => onImported(item.target_paper_id!)}>Open canonical paper</button>}
+        {item.target_paper_id && <button onClick={() => onImported(item.target_paper_id!)}>打开正式文献</button>}
       </article>)}
       <WorkflowResults results={results} onImported={onImported} />
       {!closed ? <div className="wb-actions"><button disabled={busy || editing !== null || !batch.items.some((item) => !["confirmed", "cancelled"].includes(item.status))} onClick={() => void perform(async () => {
         const response = await postJson<{ results: WorkflowResult[] }>(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/confirm`); setResults(response.results); await refresh(batch.id);
-      })}>Confirm reviewed files</button><button disabled={busy} onClick={() => void perform(async () => { remember(await postJson<UploadBatch>(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/cancel`)); setEditing(null); })}>Cancel remaining batch</button><small>Confirmed files remain in Library. Conflicts can be edited and retried.</small></div> : <button onClick={() => { setBatch(null); setResults([]); setRecoverId(null); localStorage.removeItem(batchStorage); }}>Start another batch</button>}
+      })}>确认审核并入库</button><button disabled={busy} onClick={() => void perform(async () => { remember(await postJson<UploadBatch>(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/cancel`)); setEditing(null); })}>取消批次中未入库的文件</button><small>已入库的文件会保留。冲突项可修改后重试。</small></div> : <button onClick={() => { setBatch(null); setResults([]); setRecoverId(null); localStorage.removeItem(batchStorage); }}>开始新批次</button>}
     </>}
   </section>;
 }
@@ -92,30 +93,30 @@ function ZoteroImport({ providerReady, onImported }: { providerReady: boolean; o
     return () => { active = false; };
   }, [providerReady, collection, offset, revision]);
   const importedIds = [...new Set(results.filter((item) => ["imported", "already_exists"].includes(item.status) && item.paper_id).map((item) => item.paper_id!))];
-  if (!providerReady) return <p>Zotero connector is not configured. Configure it on the API service to browse source collections and select items.</p>;
-  return <section><h3>Zotero selective import</h3><p>Select source items to import metadata, source notes and file references. Then copy PDFs into Workbench local assets.</p>
-    <label>Source collection<select disabled={busy} value={collection} onChange={(e) => { setCollection(e.target.value); setOffset(0); setSelected([]); }}><option value="">All Zotero items</option>{collections.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
-    {error && <p role="alert" className="wb-error">{error} <button onClick={() => setRevision((n) => n + 1)}>Retry</button></p>}
-    {loading ? <p role="status">Loading connector items…</p> : <><div className="wb-actions"><button disabled={busy || !items.length} onClick={() => setSelected(items.map((item) => item.id))}>Select this page</button><button disabled={busy} onClick={() => setSelected([])}>Clear selection</button><span>{selected.length} selected</span></div>
-      {!items.length && !error && <p>No items in this source collection.</p>}
-      {items.map((item) => <label className="wb-source-item" key={item.id}><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.title}</strong><small>{item.authors.join(", ")} · {item.year || "Year unknown"} · {item.import_status}</small></span></label>)}
-      <div className="wb-actions"><button disabled={busy || offset === 0} onClick={() => { setOffset(offset - 25); setSelected([]); }}>Previous</button><span>{total ? offset + 1 : 0}–{Math.min(offset + 25, total)} / {total}</span><button disabled={busy || offset + 25 >= total} onClick={() => { setOffset(offset + 25); setSelected([]); }}>Next</button></div></>}
+  if (!providerReady) return <p>尚未配置 Zotero 连接器。请在后端配置后浏览来源集合并选择条目。</p>;
+  return <section><h3>Zotero 选择性导入</h3><p>选择要导入的条目，带入元数据、来源笔记和文件引用；随后可将 PDF 保存为 Workbench 本地文件。</p>
+    <label>来源集合<select disabled={busy} value={collection} onChange={(e) => { setCollection(e.target.value); setOffset(0); setSelected([]); }}><option value="">全部 Zotero 条目</option>{collections.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+    {error && <p role="alert" className="wb-error">{error} <button onClick={() => setRevision((n) => n + 1)}>重试</button></p>}
+    {loading ? <p role="status">正在加载连接器条目…</p> : <><div className="wb-actions"><button disabled={busy || !items.length} onClick={() => setSelected(items.map((item) => item.id))}>选择本页</button><button disabled={busy} onClick={() => setSelected([])}>清空选择</button><span>已选择 {selected.length} 项</span></div>
+      {!items.length && !error && <p>此来源集合中没有条目。</p>}
+      {items.map((item) => <label className="wb-source-item" key={item.id}><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.title}</strong><small>{item.authors.join(", ")} · {item.year || "年份未知"} · {literatureLabel(item.import_status)}</small></span></label>)}
+      <div className="wb-actions"><button disabled={busy || offset === 0} onClick={() => { setOffset(offset - 25); setSelected([]); }}>上一页</button><span>{total ? offset + 1 : 0}–{Math.min(offset + 25, total)} / {total}</span><button disabled={busy || offset + 25 >= total} onClick={() => { setOffset(offset + 25); setSelected([]); }}>下一页</button></div></>}
     <button disabled={busy || loading || !selected.length} onClick={() => {
       setBusy(true); setError(""); setLocalResults([]);
       void postJson<{ results: WorkflowResult[] }>("/api/literature/imports/zotero/selective", { item_keys: selected })
         .then((response) => { setResults(response.results); setSelected([]); setRevision((n) => n + 1); }).catch((e) => setError(workflowError(e))).finally(() => setBusy(false));
-    }}>{busy ? "Working…" : "Import selected items"}</button>
+    }}>{busy ? "正在处理…" : "导入所选条目"}</button>
     <WorkflowResults results={results} onImported={onImported} />
     {!!importedIds.length && <button disabled={busy} onClick={() => {
       setBusy(true); setError("");
       void postJson<{ results: WorkflowResult[] }>("/api/literature/papers/materialize-pdfs", { paper_ids: importedIds })
         .then((response) => setLocalResults(response.results)).catch((e) => setError(workflowError(e))).finally(() => setBusy(false));
-    }}>Copy imported PDFs to Workbench</button>}
+    }}>将已导入文献的 PDF 保存到本地</button>}
     <WorkflowResults results={localResults} onImported={onImported} />
   </section>;
 }
 
 function WorkflowResults({ results, onImported }: { results: WorkflowResult[]; onImported: (id: string) => void }) {
   if (!results.length) return null;
-  return <div className="wb-results" role="status"><h4>Per-item results</h4>{results.map((result, index) => <p key={index}><strong>{result.status.replaceAll("_", " ")}</strong> · {result.item_key || result.item_id || result.paper_id}{result.error && ` · ${result.error}`} {result.paper_id && <button onClick={() => onImported(result.paper_id!)}>Open paper</button>}</p>)}</div>;
+  return <div className="wb-results" role="status"><h4>逐项处理结果</h4>{results.map((result, index) => <p key={index}><strong>{literatureLabel(result.status)}</strong> · {result.item_key || result.item_id || result.paper_id}{result.error && ` · ${result.error}`} {result.paper_id && <button onClick={() => onImported(result.paper_id!)}>打开文献</button>}</p>)}</div>;
 }

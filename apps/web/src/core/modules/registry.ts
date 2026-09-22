@@ -12,21 +12,21 @@ export type WorkbenchModule = {
 export const moduleRegistry: WorkbenchModule[] = [
   {
     id: "literature",
-    label: "Literature",
+    label: "文献库",
     description: "文献库",
     path: "/literature",
     icon: BookOpen,
   },
   {
     id: "news",
-    label: "News",
+    label: "资讯",
     description: "外部信息",
     path: "/news",
     icon: Newspaper,
   },
   {
     id: "todo",
-    label: "Todo",
+    label: "待办",
     description: "行动工作台",
     path: "/todo",
     icon: ListTodo,

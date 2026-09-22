@@ -24,3 +24,9 @@ Real local Library read: 69 papers, native collection filters, canonical detail;
 - Final Reader resize, zoom, fit and navigation regression: no warning/error console entries. Workflow browser runs also had no unexpected console errors.
 
 External Zotero network import/AI generation were not exercised against the user's live accounts. The harness is an explicit local verification tool, not an application feature or backend contract extension.
+
+## Chinese interface follow-up
+
+Navigation, filters, workflow controls, metadata review, paper detail, Reader and Radar interface copy now primarily use Chinese. Paper titles, author names, abstracts, source evidence and AI research content retain their original language. API enum values remain unchanged. Network failures now show a Chinese connection hint and one error banner instead of duplicate raw `Failed to fetch` messages.
+
+Verified production frontend build/typecheck and the running workbench at `http://localhost:5173/literature`: 69 real papers load; Chinese reading-status filtering and canonical detail work; English paper metadata remains unchanged; no console errors. Port 8013 is only the disposable acceptance harness and is unavailable after that harness stops. No application service restart or real-library write was performed.

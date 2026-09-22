@@ -68,7 +68,7 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
       getJson<PaperDetailResponse>(`/api/literature/papers/${encodedPaperId}`),
       getJson<NotesResponse>(`/api/literature/papers/${encodedPaperId}/notes`),
       getJson<UserNoteListResponse>(`/api/literature/papers/${encodedPaperId}/user-notes`).catch(() => {
-        if (!cancelled) setNoteError("My Notes could not be loaded; PDF reading remains available.");
+        if (!cancelled) setNoteError("我的笔记加载失败，仍可继续阅读 PDF。");
         return { items: [] };
       }),
     ])
@@ -83,7 +83,7 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
         if (!cancelled) setDocument(pdfDocument);
       })
       .catch(() => {
-        if (!cancelled) setError("This paper or PDF is unavailable from the configured provider.");
+        if (!cancelled) setError("无法读取此文献或 PDF，请检查本地文件及来源连接。");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -155,7 +155,7 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
     };
     void render().catch((renderError: unknown) => {
       if (!cancelled && !(renderError instanceof Error && renderError.name === "RenderingCancelledException")) {
-        setError("The PDF page could not be rendered.");
+        setError("PDF 页面渲染失败。");
       }
     });
     return () => {
@@ -229,37 +229,37 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
   return (
     <main className={`pdf-reader ${sidebarOpen ? "notes-open" : ""}`}>
       <header className="reader-header">
-        <a className="reader-back" href={`/literature?paper=${encodeURIComponent(paperId)}`}><ArrowLeft size={16} aria-hidden="true" />Paper detail</a>
+        <a className="reader-back" href={`/literature?paper=${encodeURIComponent(paperId)}`}><ArrowLeft size={16} aria-hidden="true" />文献详情</a>
         <div className="reader-title">
-          <strong>{detail?.paper.title ?? "PDF Reader"}</strong>
-          <span>{document ? `${document.numPages} pages` : "Loading document"}</span>
+          <strong>{detail?.paper.title ?? "PDF 阅读器"}</strong>
+          <span>{document ? `${document.numPages} 页` : "正在加载文档"}</span>
         </div>
         <div className="reader-actions">
-          <button className="reader-button" type="button" onClick={() => showSidebar("zotero")}><NotebookPen size={15} />Notes</button>
+          <button className="reader-button" type="button" onClick={() => showSidebar("zotero")}><NotebookPen size={15} />笔记</button>
           <button className="reader-button" type="button" onClick={() => showSidebar("ai")}><Bot size={15} />AI</button>
-          <a className="reader-button" href={downloadUrl}><Download size={15} />Download</a>
+          <a className="reader-button" href={downloadUrl}><Download size={15} />下载</a>
         </div>
       </header>
 
-      <div className="reader-toolbar" aria-label="PDF controls">
-        <button type="button" disabled={!document || pageNumber <= 1} onClick={() => setPageNumber((value) => value - 1)} aria-label="Previous page"><ChevronLeft size={16} /></button>
-        <label className="page-jump"><input value={pageInput} onChange={(event) => setPageInput(event.target.value)} onBlur={goToPage} onKeyDown={(event) => { if (event.key === "Enter") goToPage(); }} aria-label="Page number" /><span>/ {document?.numPages ?? "–"}</span></label>
-        <button type="button" disabled={!document || pageNumber >= document.numPages} onClick={() => setPageNumber((value) => value + 1)} aria-label="Next page"><ChevronRight size={16} /></button>
+      <div className="reader-toolbar" aria-label="PDF 阅读控制">
+        <button type="button" disabled={!document || pageNumber <= 1} onClick={() => setPageNumber((value) => value - 1)} aria-label="上一页"><ChevronLeft size={16} /></button>
+        <label className="page-jump"><input value={pageInput} onChange={(event) => setPageInput(event.target.value)} onBlur={goToPage} onKeyDown={(event) => { if (event.key === "Enter") goToPage(); }} aria-label="页码" /><span>/ {document?.numPages ?? "–"}</span></label>
+        <button type="button" disabled={!document || pageNumber >= document.numPages} onClick={() => setPageNumber((value) => value + 1)} aria-label="下一页"><ChevronRight size={16} /></button>
         <span className="toolbar-divider" />
-        <button type="button" onClick={() => changeZoom(zoom - 0.15)} aria-label="Zoom out"><Minus size={16} /></button>
-        <span className="zoom-label">{fitPage ? "Fit" : `${Math.round(zoom * 100)}%`}</span>
-        <button type="button" onClick={() => changeZoom(zoom + 0.15)} aria-label="Zoom in"><Plus size={16} /></button>
-        <button className={fitPage ? "active" : ""} type="button" onClick={() => setFitPage(true)} title="Fit page width" aria-label="Fit page width"><Maximize2 size={15} /></button>
-        {selection ? <span className="selection-status">Selected · p. {selection.pageNumber}</span> : null}
+        <button type="button" onClick={() => changeZoom(zoom - 0.15)} aria-label="缩小"><Minus size={16} /></button>
+        <span className="zoom-label">{fitPage ? "适应宽度" : `${Math.round(zoom * 100)}%`}</span>
+        <button type="button" onClick={() => changeZoom(zoom + 0.15)} aria-label="放大"><Plus size={16} /></button>
+        <button className={fitPage ? "active" : ""} type="button" onClick={() => setFitPage(true)} title="适应页面宽度" aria-label="适应页面宽度"><Maximize2 size={15} /></button>
+        {selection ? <span className="selection-status">已选择 · 第 {selection.pageNumber}</span> : null}
       </div>
 
-      <section className="reader-page-area" ref={pageAreaRef} aria-label="PDF page">
-        {loading ? <ReaderState title="Loading PDF" detail="Fetching the PDF through the Workbench API." /> : null}
-        {error ? <ReaderState title="Reader unavailable" detail={error} /> : null}
+      <section className="reader-page-area" ref={pageAreaRef} aria-label="PDF 页面">
+        {loading ? <ReaderState title="正在加载 PDF" detail="正在通过 Workbench 读取 PDF。" /> : null}
+        {error ? <ReaderState title="阅读器暂不可用" detail={error} /> : null}
         {!loading && !error ? (
           <div className="pdf-page-stack" style={{ width: pageSize.width, height: pageSize.height }} onMouseUp={captureSelection}>
             <canvas ref={canvasRef} className="pdf-canvas" />
-            <div ref={textLayerRef} className="pdf-text-layer" aria-label="Selectable PDF text">
+            <div ref={textLayerRef} className="pdf-text-layer" aria-label="可选中的 PDF 文本">
               {textItems.map((item) => <span key={item.key} style={item.style}>{item.text} </span>)}
             </div>
           </div>
@@ -267,29 +267,29 @@ export function PdfReaderPage({ paperId }: { paperId: string }) {
       </section>
 
       {sidebarOpen ? (
-        <aside className="reader-notes reader-sidebar" aria-label="Paper reading sidebar">
+        <aside className="reader-notes reader-sidebar" aria-label="阅读侧栏">
           <div className="reader-sidebar-tabs" role="tablist">
-            <button className={sidebarTab === "zotero" ? "active" : ""} type="button" onClick={() => setSidebarTab("zotero")}>Source Notes</button>
-            <button className={sidebarTab === "my-notes" ? "active" : ""} type="button" onClick={() => setSidebarTab("my-notes")}>My Notes</button>
-            <button className={sidebarTab === "ai" ? "active" : ""} type="button" onClick={() => setSidebarTab("ai")}>AI Assistant</button>
+            <button className={sidebarTab === "zotero" ? "active" : ""} type="button" onClick={() => setSidebarTab("zotero")}>来源笔记</button>
+            <button className={sidebarTab === "my-notes" ? "active" : ""} type="button" onClick={() => setSidebarTab("my-notes")}>我的笔记</button>
+            <button className={sidebarTab === "ai" ? "active" : ""} type="button" onClick={() => setSidebarTab("ai")}>AI 助手</button>
           </div>
           <div className="reader-notes-scroll">
             {sidebarTab === "zotero" ? (
               notes.length > 0 ? notes.map((note) => (
                 <article className="reader-note-card" key={note.id}>
-                  <span>{note.kind === "annotation" ? `Annotation${note.page_label ? ` · p. ${note.page_label}` : ""}` : "Source Note"}</span>
-                  <p>{plainNoteText(note.content) || "Empty note"}</p>
+                  <span>{note.kind === "annotation" ? `批注${note.page_label ? ` · 页码 ${note.page_label}` : ""}` : "来源笔记"}</span>
+                  <p>{plainNoteText(note.content) || "空笔记"}</p>
                 </article>
-              )) : <ReaderState title="No source notes" detail="This paper has no imported source notes." />
+              )) : <ReaderState title="暂无来源笔记" detail="此文献没有导入的来源笔记。" />
             ) : null}
             {sidebarTab === "my-notes" ? (
               <div className="my-notes">
-                {noteError ? <div className="ai-error" role="alert"><span>{noteError}</span><button type="button" onClick={() => setNoteError(null)}>Dismiss</button></div> : null}
-                <textarea value={manualNote} onChange={(event) => setManualNote(event.target.value)} rows={4} placeholder="Write a local note…" />
-                <button className="ai-trigger" type="button" disabled={!manualNote.trim() || savingNote} onClick={() => void saveManualNote()}><Save size={14} />{savingNote ? "Saving…" : "Add Note"}</button>
+                {noteError ? <div className="ai-error" role="alert"><span>{noteError}</span><button type="button" onClick={() => setNoteError(null)}>关闭</button></div> : null}
+                <textarea value={manualNote} onChange={(event) => setManualNote(event.target.value)} rows={4} placeholder="撰写本地笔记…" />
+                <button className="ai-trigger" type="button" disabled={!manualNote.trim() || savingNote} onClick={() => void saveManualNote()}><Save size={14} />{savingNote ? "正在保存…" : "添加笔记"}</button>
                 {userNotes.length > 0 ? userNotes.map((note) => (
                   <article className="reader-note-card" key={note.id}><span>{userNoteLabel(note.source)}</span><p>{note.content}</p></article>
-                )) : <ReaderState title="No My Notes" detail="Manual notes and explicitly saved AI results appear here." />}
+                )) : <ReaderState title="暂无我的笔记" detail="手动笔记和主动保存的 AI 分析结果将显示在这里。" />}
               </div>
             ) : null}
             {sidebarTab === "ai" ? <LiteratureAIAssistant paperId={paperId} selection={selection} onNoteAdded={(note) => setUserNotes((items) => [note, ...items])} /> : null}
@@ -314,9 +314,9 @@ function normalizeText(value: string) {
 }
 
 function userNoteLabel(source: LiteratureUserNote["source"]) {
-  if (source === "manual") return "My Note";
-  if (source === "ai_overview") return "Saved from AI Overview";
-  if (source === "ai_deep_read") return "Saved from AI Deep Read";
-  if (source === "ai_chat") return "Saved from Ask Paper";
-  return "Saved from PDF Selection";
+  if (source === "manual") return "我的笔记";
+  if (source === "ai_overview") return "保存自 AI 概览";
+  if (source === "ai_deep_read") return "保存自 AI 精读";
+  if (source === "ai_chat") return "保存自论文问答";
+  return "保存自 PDF 选文";
 }

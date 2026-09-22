@@ -20,10 +20,10 @@ import type {
 } from "../types";
 
 const reviewOptions: { label: string; value: RadarReviewStatus }[] = [
-  { label: "New", value: "new" },
-  { label: "Seen", value: "seen" },
-  { label: "Interested", value: "interested" },
-  { label: "Dismissed", value: "dismissed" },
+  { label: "未查看", value: "new" },
+  { label: "已查看", value: "seen" },
+  { label: "感兴趣", value: "interested" },
+  { label: "已忽略", value: "dismissed" },
 ];
 
 export function RadarInbox() {
@@ -50,7 +50,7 @@ export function RadarInbox() {
           const state = await postJson<{ saved: Record<string, string> }>("/api/literature/imports/radar-saved", { recommendation_ids: ids });
           setSaved(state.saved);
           setSaveError("");
-        } catch { setSaveError("Library saved state is unavailable. Radar review is still available."); }
+        } catch { setSaveError("无法读取入库状态，仍可审核雷达结果。"); }
       }
     } catch {
       setError(true);
@@ -66,7 +66,7 @@ export function RadarInbox() {
       const result = await postJson<{ paper_id: string }>(`/api/literature/imports/radar/${encodeURIComponent(id)}`);
       setSaved((current) => ({ ...current, [id]: result.paper_id }));
     } catch (error) {
-      setSaveError(error instanceof ApiError && error.code === "identity_conflict" ? "This paper has conflicting identifiers. It was not merged; inspect the source metadata before saving." : "Could not save to Library. Try again.");
+      setSaveError(error instanceof ApiError && error.code === "identity_conflict" ? "文献标识存在冲突，未执行合并。请核对来源元数据后再保存。" : "无法保存到文献库，请重试。");
     } finally { setSaving(null); }
   };
 
@@ -97,8 +97,8 @@ export function RadarInbox() {
     return (
       <RadarState
         icon={<LoaderCircle className="spin" size={22} />}
-        title="Loading Radar Inbox"
-        message="Reading the latest validated Literature Radar run."
+        title="正在加载发现雷达"
+        message="正在读取最近一次已验证的文献发现结果。"
       />
     );
   }
@@ -106,9 +106,9 @@ export function RadarInbox() {
     return (
       <RadarState
         icon={<AlertCircle size={22} />}
-        title="Radar Inbox unavailable"
-        message="The persisted Radar run could not be read from Workbench."
-        action={<button type="button" onClick={() => void load()}>Try again</button>}
+        title="发现雷达暂不可用"
+        message="无法读取 Workbench 保存的雷达结果。"
+        action={<button type="button" onClick={() => void load()}>重试</button>}
       />
     );
   }
@@ -116,8 +116,8 @@ export function RadarInbox() {
     return (
       <RadarState
         icon={<Sparkles size={22} />}
-        title="No Radar run yet"
-        message="Validate a Literature Radar result and ingest it manually with workbench-agent."
+        title="暂无雷达结果"
+        message="请先验证并导入一次文献雷达结果。"
         action={<button type="button" onClick={() => void load()}>Reload</button>}
       />
     );
@@ -134,23 +134,23 @@ export function RadarInbox() {
       <section className="radar-run-card">
         <div className="radar-run-heading">
           <div>
-            <span className="radar-eyebrow"><Sparkles size={13} />Latest Radar Run</span>
+            <span className="radar-eyebrow"><Sparkles size={13} />最近一次发现</span>
             <h2>{profileName}</h2>
             <p>
-              Generated {formatDateTime(run.generated_at)}
-              {lookback !== null ? ` · ${lookback}-day lookback` : ""}
+              生成时间：{formatDateTime(run.generated_at)}
+              {lookback !== null ? ` · ${lookback} 天回溯` : ""}
               {windowFrom && windowTo ? ` · ${windowFrom} → ${windowTo}` : ""}
             </p>
           </div>
           <button className="radar-reload" type="button" onClick={() => void load()}>
-            <RefreshCw size={14} />Reload persisted run
+            <RefreshCw size={14} />刷新发现结果
           </button>
         </div>
 
-        <div className="radar-counts" aria-label="Radar run counts">
-          <RunCount label="Candidates" value={run.candidate_count} />
-          <RunCount label="Verified" value={run.verified_candidate_count} />
-          <RunCount label="Recommended" value={run.recommended_count} emphasis />
+        <div className="radar-counts" aria-label="雷达结果统计">
+          <RunCount label="候选文献" value={run.candidate_count} />
+          <RunCount label="已验证" value={run.verified_candidate_count} />
+          <RunCount label="推荐" value={run.recommended_count} emphasis />
         </div>
 
         <div className="radar-source-grid">
@@ -161,29 +161,29 @@ export function RadarInbox() {
 
         {run.warnings.length > 0 ? (
           <div className="radar-warnings">
-            <span><AlertTriangle size={14} />Run warnings</span>
+            <span><AlertTriangle size={14} />运行提示</span>
             <ul>{run.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
           </div>
         ) : null}
 
         {zoteroSummary ? (
           <div className="radar-zotero-context">
-            <span><BookOpenCheck size={14} />Zotero context</span>
+            <span><BookOpenCheck size={14} />Zotero 参考背景</span>
             <p>{zoteroSummary}</p>
           </div>
         ) : null}
       </section>
 
       {reviewError ? (
-        <div className="radar-inline-error">Review state could not be saved. Try again.</div>
+        <div className="radar-inline-error">审核状态保存失败，请重试。</div>
       ) : null}
       {saveError ? <div className="radar-inline-error" role="alert">{saveError}</div> : null}
 
       <section className="radar-section">
         <div className="radar-section-heading">
           <div>
-            <span>Priority reading list</span>
-            <h2>Recommended Papers</h2>
+            <span>优先阅读列表</span>
+            <h2>推荐论文</h2>
           </div>
           <strong>{run.recommendations.length}</strong>
         </div>
@@ -205,8 +205,8 @@ export function RadarInbox() {
       <details className="radar-alternatives">
         <summary>
           <span>
-            <strong>Verified Alternatives</strong>
-            <small>Real and relevant papers that did not enter the Top {run.recommended_count}.</small>
+            <strong>已验证的备选论文</strong>
+            <small>真实且相关、但未进入前 {run.recommended_count} 名的论文。</small>
           </span>
           <b>{run.verified_alternatives.length}</b>
         </summary>
@@ -227,7 +227,7 @@ export function RadarInbox() {
       </details>
 
       <details className="radar-diagnostics">
-        <summary>Run diagnostics and screening detail</summary>
+        <summary>运行诊断与筛选详情</summary>
         <pre>{JSON.stringify(run.diagnostics, null, 2)}</pre>
       </details>
     </div>
@@ -269,7 +269,7 @@ function RadarPaperCard({
           {paper.published_at ? <time dateTime={paper.published_at}>{formatDate(paper.published_at)}</time> : null}
         </div>
         {paper.overall_score !== null ? (
-          <strong className="radar-overall">Overall {formatScore(paper.overall_score)}</strong>
+          <strong className="radar-overall">综合评分 {formatScore(paper.overall_score)}</strong>
         ) : null}
       </div>
 
@@ -278,44 +278,44 @@ function RadarPaperCard({
           <h3>{paper.title}</h3>
           {paper.authors.length > 0 ? <p>{paper.authors.join(", ")}</p> : null}
         </div>
-        <a href={primarySource} target="_blank" rel="noreferrer" aria-label={`Open primary source for ${paper.title}`}>
-          <ExternalLink size={15} />Primary source
+        <a href={primarySource} target="_blank" rel="noreferrer" aria-label={`打开论文原始来源：${paper.title}`}>
+          <ExternalLink size={15} />原始来源
         </a>
       </div>
 
       {paper.ai_summary ? (
         <div className="radar-copy-block radar-summary-block">
-          <span><Sparkles size={12} />AI Summary</span>
+          <span><Sparkles size={12} />AI 摘要</span>
           <p>{paper.ai_summary}</p>
         </div>
       ) : null}
       <div className="radar-copy-block">
-        <span>{alternative ? "Why it missed the Top list" : "Why Recommended"}</span>
+        <span>{alternative ? "未进入推荐列表的原因" : "推荐理由"}</span>
         <p>{paper.recommendation_reason}</p>
       </div>
       {relationship ? (
         <div className="radar-copy-block radar-relationship-block">
-          <span>Zotero Relationship</span>
+          <span>与 Zotero 文献的关系</span>
           <p>{relationship}</p>
         </div>
       ) : null}
 
       <div className="radar-score-grid">
-        <Score label="Relevance" value={paper.relevance_score} />
-        <Score label="Novelty" value={paper.novelty_score} />
-        <Score label="Scientific value" value={paper.scientific_value_score} />
-        <Score label="Recency" value={paper.recency_score} />
-        <Score label="Overall" value={paper.overall_score} emphasis />
+        <Score label="相关性" value={paper.relevance_score} />
+        <Score label="新颖性" value={paper.novelty_score} />
+        <Score label="科学价值" value={paper.scientific_value_score} />
+        <Score label="时效性" value={paper.recency_score} />
+        <Score label="综合评分" value={paper.overall_score} emphasis />
       </div>
 
       <div className="radar-paper-footer">
-        {savedId ? <a className="library-save" href={`/literature?paper=${encodeURIComponent(savedId)}`}>Saved · Open Library</a> : <button className="library-save" type="button" disabled={saving} onClick={() => void onSave(paper.recommendation_id)}>{saving ? "Saving…" : "Save to Library"}</button>}
+        {savedId ? <a className="library-save" href={`/literature?paper=${encodeURIComponent(savedId)}`}>已入库 · 打开文献</a> : <button className="library-save" type="button" disabled={saving} onClick={() => void onSave(paper.recommendation_id)}>{saving ? "正在保存…" : "保存到文献库"}</button>}
         <div className="radar-evidence-line">
-          {evidenceDepth ? <span>Evidence: {evidenceDepth.replace("_", " ")}</span> : null}
+          {evidenceDepth ? <span>依据：{evidenceDepth.replace("_", " ")}</span> : null}
           {paper.doi ? <span>DOI {paper.doi}</span> : paper.arxiv_id ? <span>arXiv {paper.arxiv_id}</span> : null}
         </div>
         <label className={`radar-review radar-review-${paper.review_status}`}>
-          <span>Review</span>
+          <span>审核状态</span>
           <select
             value={paper.review_status}
             disabled={updating}
@@ -333,12 +333,12 @@ function RadarPaperCard({
 
       {relatedPapers.length > 0 || Object.keys(paper.date_evidence).length > 0 ? (
         <details className="radar-paper-details">
-          <summary>Evidence and library relationship detail</summary>
+          <summary>依据与文献库关联详情</summary>
           {relatedPapers.length > 0 ? (
             <ul>
               {relatedPapers.map((item, index) => (
                 <li key={`${recordText(item, "title") ?? "paper"}-${index}`}>
-                  <strong>{recordText(item, "title") ?? "Related paper"}</strong>
+                  <strong>{recordText(item, "title") ?? "关联文献"}</strong>
                   {recordText(item, "relationship") ? ` — ${recordText(item, "relationship")}` : ""}
                 </li>
               ))}
@@ -359,11 +359,11 @@ function SourceStatusCard({ source }: { source: RadarSourceStatus }) {
         <strong>{source.name}</strong>
         <span>{source.status.replace("_", " ")}</span>
       </div>
-      <small>{source.result_count} results · {source.attempts} attempts</small>
+      <small>{source.result_count} 条结果 · {source.attempts} 次尝试</small>
       {note ? <p className="radar-source-note">{note}</p> : null}
       {source.routes.length > 0 || source.warning ? (
         <details className="radar-source-details">
-          <summary>Route and environment details</summary>
+          <summary>访问路径与环境详情</summary>
           {source.warning ? <p>{source.warning}</p> : null}
           {source.routes.length > 0 ? (
             <ul>
@@ -385,13 +385,13 @@ function SourceStatusCard({ source }: { source: RadarSourceStatus }) {
 
 function sourceStatusNote(source: RadarSourceStatus): string | null {
   if (source.status === "degraded" && source.result_count > 0) {
-    return "Usable evidence is available; one or more access routes were limited.";
+    return "已有可用依据，部分访问路径受限。";
   }
   if (source.status === "degraded") {
-    return "This source was limited; other sources supplied the usable evidence.";
+    return "此来源受限，可用依据由其他来源提供。";
   }
-  if (source.status === "failed") return "No usable evidence was obtained from this source.";
-  if (source.status === "not_attempted") return "This source was not attempted for this run.";
+  if (source.status === "failed") return "未从此来源获得可用依据。";
+  if (source.status === "not_attempted") return "本次未访问此来源。";
   return null;
 }
 

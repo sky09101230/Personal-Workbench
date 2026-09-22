@@ -1,7 +1,7 @@
 import { Bot, Clipboard, RefreshCw, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { ApiError, getJson, postJson } from "../api";
+import { getJson, postJson, workflowError } from "../api";
 import type {
   AnalysisListResponse,
   ConversationListResponse,
@@ -125,7 +125,7 @@ export function LiteratureAIAssistant({
   const runSelection = async (action: SelectionAction) => {
     if (!selection) return;
     if (action === "ask" && !selectionQuestion.trim()) {
-      setError("Enter a question about the selected text first.");
+      setError("请先输入关于选中文本的问题。");
       return;
     }
     setPending(`selection-${action}`);
@@ -175,7 +175,7 @@ export function LiteratureAIAssistant({
   };
 
   if (loading) {
-    return <AssistantState icon={<RefreshCw size={18} className="spin" />} title="Loading AI history" detail="Reading saved analyses and paper conversation." />;
+    return <AssistantState icon={<RefreshCw size={18} className="spin" />} title="正在加载 AI 历史" detail="正在读取已保存的分析和论文对话。" />;
   }
 
   return (
@@ -183,31 +183,31 @@ export function LiteratureAIAssistant({
       {error ? (
         <div className="ai-error" role="alert">
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)}>Dismiss</button>
+          <button type="button" onClick={() => setError(null)}>关闭</button>
         </div>
       ) : null}
 
-      <AssistantSection title="Overview">
+      <AssistantSection title="概览">
         {overview ? (
           <ResultCard analysis={overview} pending={pending} onAdd={() => addAnalysisToNotes(overview)} onRetry={() => generateAnalysis("overview", true)} />
         ) : (
-          <TriggerButton pending={pending === "overview"} label="Generate Overview" onClick={() => generateAnalysis("overview")} />
+          <TriggerButton pending={pending === "overview"} label="生成概览" onClick={() => generateAnalysis("overview")} />
         )}
       </AssistantSection>
 
-      <AssistantSection title="Deep Read">
+      <AssistantSection title="精读">
         {deepRead ? (
           <ResultCard analysis={deepRead} pending={pending} onAdd={() => addAnalysisToNotes(deepRead)} onRetry={() => generateAnalysis("deep_read", true)} />
         ) : (
-          <TriggerButton pending={pending === "deep_read"} label="Run Deep Read" onClick={() => generateAnalysis("deep_read")} />
+          <TriggerButton pending={pending === "deep_read"} label="开始精读" onClick={() => generateAnalysis("deep_read")} />
         )}
       </AssistantSection>
 
-      <AssistantSection title="Ask Paper">
+      <AssistantSection title="论文问答">
         <div className="ai-messages">
           {messages.length > 0 ? messages.map((message) => (
             <article className={`ai-message ${message.role}`} key={message.id}>
-              <span>{message.role === "assistant" ? "AI" : "You"}</span>
+              <span>{message.role === "assistant" ? "AI" : "你"}</span>
               <p>{messageText(message)}</p>
               {message.role === "assistant" ? (
                 <ResultActions
@@ -217,13 +217,13 @@ export function LiteratureAIAssistant({
                 />
               ) : null}
             </article>
-          )) : <p className="ai-muted">No questions yet. Answers stay bound to this paper.</p>}
+          )) : <p className="ai-muted">暂无提问。对话始终与此论文关联。</p>}
         </div>
-        <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about this paper…" rows={3} />
-        <TriggerButton pending={pending === "ask-paper"} label="Ask Paper" disabled={!question.trim()} onClick={askPaper} />
+        <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="就这篇论文提问…" rows={3} />
+        <TriggerButton pending={pending === "ask-paper"} label="论文问答" disabled={!question.trim()} onClick={askPaper} />
       </AssistantSection>
 
-      <AssistantSection title="Selected Text">
+      <AssistantSection title="选中文本">
         {selection ? (
           <>
             <blockquote className="selection-preview">{selection.selectedText}</blockquote>
@@ -232,10 +232,10 @@ export function LiteratureAIAssistant({
                 <button type="button" key={action} disabled={pending !== null} onClick={() => runSelection(action)}>{selectionActionLabel(action)}</button>
               ))}
             </div>
-            <input value={selectionQuestion} onChange={(event) => setSelectionQuestion(event.target.value)} placeholder="Question about selection" />
-            <TriggerButton pending={pending === "selection-ask"} label="Ask AI" disabled={!selectionQuestion.trim()} onClick={() => runSelection("ask")} />
+            <input value={selectionQuestion} onChange={(event) => setSelectionQuestion(event.target.value)} placeholder="关于选中文本的问题" />
+            <TriggerButton pending={pending === "selection-ask"} label="向 AI 提问" disabled={!selectionQuestion.trim()} onClick={() => runSelection("ask")} />
           </>
-        ) : <p className="ai-muted">Select text on the current PDF page to enable focused actions.</p>}
+        ) : <p className="ai-muted">在当前 PDF 页选中文本后，可解释、总结或提问。</p>}
         {latestSelection ? (
           <ResultCard analysis={latestSelection} pending={pending} onAdd={() => addAnalysisToNotes(latestSelection)} />
         ) : null}
@@ -278,15 +278,15 @@ function ResultActions({ content, disabled, onAdd, onRetry }: { content: string;
   };
   return (
     <div className="ai-result-actions">
-      <button type="button" disabled={disabled} onClick={() => void copy()}><Clipboard size={13} />{copied ? "Copied" : "Copy"}</button>
-      <button type="button" disabled={disabled} onClick={onAdd}><Save size={13} />Add to Notes</button>
-      {onRetry ? <button type="button" disabled={disabled} onClick={onRetry}><RefreshCw size={13} />Retry</button> : null}
+      <button type="button" disabled={disabled} onClick={() => void copy()}><Clipboard size={13} />{copied ? "已复制" : "复制"}</button>
+      <button type="button" disabled={disabled} onClick={onAdd}><Save size={13} />保存到笔记</button>
+      {onRetry ? <button type="button" disabled={disabled} onClick={onRetry}><RefreshCw size={13} />重试</button> : null}
     </div>
   );
 }
 
 function TriggerButton({ pending, label, disabled = false, onClick }: { pending: boolean; label: string; disabled?: boolean; onClick: () => void }) {
-  return <button className="ai-trigger" type="button" disabled={disabled || pending} onClick={onClick}>{pending ? <RefreshCw size={14} className="spin" /> : <Bot size={14} />}{pending ? "Working…" : label}</button>;
+  return <button className="ai-trigger" type="button" disabled={disabled || pending} onClick={onClick}>{pending ? <RefreshCw size={14} className="spin" /> : <Bot size={14} />}{pending ? "正在处理…" : label}</button>;
 }
 
 function AssistantState({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) {
@@ -309,14 +309,12 @@ function formatContent(content: object) {
 }
 
 function selectionActionLabel(action: SelectionAction) {
-  if (action === "explain") return "Explain";
-  if (action === "summarize") return "Summarize";
-  if (action === "translate") return "Translate";
-  return "Ask AI";
+  if (action === "explain") return "解释";
+  if (action === "summarize") return "总结";
+  if (action === "translate") return "翻译";
+  return "向 AI 提问";
 }
 
 function errorMessage(error: unknown) {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
-  return "AI request failed. Please retry.";
+  return workflowError(error);
 }

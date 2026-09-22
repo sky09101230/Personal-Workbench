@@ -5,12 +5,12 @@ export function WorkbenchSidebar() {
   const pathname = window.location.pathname;
 
   return (
-    <aside className="sidebar" aria-label="Workbench navigation">
+    <aside className="sidebar" aria-label="工作台导航">
       <div className="brand-mark">
         <span className="brand-dot" aria-hidden="true" />
         <span>Personal Workbench</span>
       </div>
-      <div className="sidebar-label">Modules</div>
+      <div className="sidebar-label">功能模块</div>
       <nav className="module-nav">
         {moduleRegistry.map((module) => {
           const Icon = module.icon;
@@ -26,10 +26,10 @@ export function WorkbenchSidebar() {
         })}
       </nav>
       <div className="sidebar-footer">
-        <button className="icon-button" type="button" title="Settings" aria-label="Settings">
+        <button className="icon-button" type="button" title="设置" aria-label="设置">
           <Settings size={17} strokeWidth={1.8} />
         </button>
-        <span>v0.1 foundation</span>
+        <span>v0.1 基础版</span>
       </div>
     </aside>
   );
