@@ -10,4 +10,4 @@
 
 - [x] 2.1 Validate and reconcile saved real migration failures after backup; recheck owned files, source preservation and recovery-needed counts without fabricating missing bytes.
 - [x] 2.2 Run full regression/build/OpenSpec checks and write the original-requirement acceptance matrix with explicit remaining gaps; commit the Change.
-- [x] 2.3 Finalize implementation acceptance for this Change and verify the clean task diff before the Goal completion audit; main-spec synchronization/archival review remains a separate final audit step.
+- [x] 2.3 Finalize implementation acceptance, synchronize the seven new main capability specs, validate all 28 OpenSpec items and complete the Goal audit with explicit recovery exceptions.
