@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import re
 import time
 
@@ -151,10 +151,21 @@ class LiteratureService:
         return self.provider.open_attachment(attachment, range_header=range_header)
 
     def asset_integrity(self, paper_id: str) -> tuple[AssetIntegrity, ...]:
-        return tuple(
-            self.files.inspect(asset) if self.files else AssetIntegrity(asset.id, "remote_only" if asset.storage_kind == "zotero" else "unsupported_backend")
-            for asset in self.list_attachments(paper_id)
-        )
+        results = []
+        owned_lookup = getattr(self.cache, 'owned_asset', None)
+        state_lookup = getattr(self.cache, 'asset_acquisition_state', None)
+        for asset in self.list_attachments(paper_id):
+            state = state_lookup(asset) if state_lookup and asset.storage_kind == 'zotero' else None
+            error = state['error'] if state and state['status'] == 'failed' else None
+            owned = owned_lookup(asset, require_current_source=False) if owned_lookup and asset.storage_kind == 'zotero' else None
+            if owned and self.files:
+                checked = self.files.inspect(owned)
+                results.append(replace(checked, asset_id=asset.id, state='owned_copy' if checked.state == 'verified' else 'owned_copy_' + checked.state, owned_asset_id=owned.id, acquisition_error=error))
+            elif asset.storage_kind == 'zotero':
+                results.append(AssetIntegrity(asset.id, 'source_unavailable' if error else 'remote_only' if asset.active else 'detached', acquisition_error=error))
+            else:
+                results.append(self.files.inspect(asset) if self.files else AssetIntegrity(asset.id, 'unsupported_backend'))
+        return tuple(results)
 
     def sync(self, *, page_size: int = 100) -> SyncResult:
         state = self._library_state()
@@ -316,7 +327,7 @@ def _latest_version(*versions: str | None) -> str | None:
 def _pdf_attachment_priority(attachment: Attachment) -> tuple[int, int, str, str]:
     return (
         2 if attachment.role == "supplementary" or _SUPPLEMENTARY_PDF_PATTERN.search(attachment.filename) else 1 if attachment.role == "preprint" else 0,
-        0 if attachment.storage_kind == 'local' else 1,
+        0 if attachment.storage_kind != 'zotero' else 1,
         attachment.filename.casefold(),
         attachment.id,
     )

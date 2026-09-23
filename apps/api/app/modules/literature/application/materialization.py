@@ -17,9 +17,14 @@ class PdfMaterializationService:
 
     def acquire_asset(self, source: Attachment, *, refresh=False):
         def failed(reason):
-            return AssetAcquisitionResult(source.id, source.paper_id, 'failed', error=reason)
+            if not reason.startswith('owned_asset_'):
+                try:
+                    self.repository.record_asset_failure(source, reason)
+                except Exception:
+                    return AssetAcquisitionResult(source.id, source.paper_id, 'failed', error='acquisition_state_unavailable', filename=source.filename)
+            return AssetAcquisitionResult(source.id, source.paper_id, 'failed', error=reason, filename=source.filename)
         if source.storage_kind != 'zotero' or source.content_type != 'application/pdf' or not source.active or not source.downloadable:
-            return AssetAcquisitionResult(source.id, source.paper_id, 'skipped', error='source_not_eligible')
+            return AssetAcquisitionResult(source.id, source.paper_id, 'skipped', error='source_not_eligible', filename=source.filename)
         staged = None
         try:
             existing = self.repository.owned_asset(source)
@@ -27,7 +32,7 @@ class PdfMaterializationService:
                 inspection = self.files.inspect(existing)
                 if inspection.state != 'verified':
                     return failed('owned_asset_' + inspection.state)
-                return AssetAcquisitionResult(source.id, source.paper_id, 'already_owned', existing.id, inspection.sha256, inspection.size_bytes, existing.content_version)
+                return AssetAcquisitionResult(source.id, source.paper_id, 'already_owned', existing.id, inspection.sha256, inspection.size_bytes, existing.content_version, filename=source.filename)
             before = self.provider.describe_attachment(source)
             if before.external_ref != source.external_ref or before.paper_id != (source.source_paper_id or source.paper_id):
                 return failed('source_parent_changed')
@@ -58,7 +63,7 @@ class PdfMaterializationService:
             if inspection.state != 'verified':
                 return failed('owned_asset_' + inspection.state)
             saved = self.repository.record_owned_asset(source, asset, before, staged.size_bytes)
-            return AssetAcquisitionResult(source.id, source.paper_id, 'acquired', saved.id, staged.sha256, staged.size_bytes, before.content_version)
+            return AssetAcquisitionResult(source.id, source.paper_id, 'acquired', saved.id, staged.sha256, staged.size_bytes, before.content_version, filename=source.filename)
         except MigrationRequiredError:
             raise
         except ProviderAuthenticationError:
@@ -82,13 +87,23 @@ class PdfMaterializationService:
                 except (OSError, ValueError):
                     pass
 
+    def acquire_paper_asset(self, paper_id, source_asset_id):
+        from app.modules.literature.application.errors import LiteratureResourceNotFoundError
+        paper = self.repository.get_paper(paper_id)
+        if paper is None:
+            raise LiteratureResourceNotFoundError('Paper not found')
+        source = next((asset for asset in self.repository.list_attachments(paper.paper.id) if asset.id == source_asset_id), None)
+        if source is None:
+            raise LiteratureResourceNotFoundError('Source asset not found for this paper')
+        return self.acquire_asset(source)
+
     def materialize_paper(self, paper_id):
         detail = self.repository.get_paper(paper_id)
         if not detail:
             return MaterializationResult(paper_id, "pdf_failed", error="paper_not_found")
         paper_id = detail.paper.id
         attachments = self.repository.list_attachments(paper_id)
-        local = [a for a in attachments if a.storage_kind == "local" and a.active and a.role == "primary" and a.content_type == "application/pdf"]
+        local = [a for a in attachments if a.storage_kind != "zotero" and a.active and a.role == "primary" and a.content_type == "application/pdf"]
         for asset in local:
             try:
                 opened = self.files.open(asset)

@@ -80,7 +80,7 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
             c.execute("UPDATE literature_upload_batches SET status='reviewing' WHERE id=?", (batch_id,))
             return _item(c.execute('SELECT * FROM literature_upload_items WHERE id=?', (item_id,)).fetchone())
 
-    def confirm_upload(self, batch_id, item_id, finalize):
+    def confirm_upload(self, batch_id, item_id, finalize, *, storage_kind='local'):
         self._require_canonical()
         with self._connect() as c:
             c.execute('BEGIN IMMEDIATE')
@@ -101,7 +101,7 @@ class SQLiteLiteratureWorkflowRepository(SQLiteCanonicalRepository):
                     raise ValueError('Review and supply a title before confirmation')
                 paper = Paper('', **metadata)
                 storage_key = finalize(item.staging_key, item.sha256)
-                asset = Attachment(_id('asset'), '', item.filename, 'application/pdf', True, storage_kind='local', storage_key=storage_key, sha256=item.sha256)
+                asset = Attachment(_id('asset'), '', item.filename, 'application/pdf', True, storage_kind=storage_kind, storage_key=storage_key, sha256=item.sha256)
                 incoming = Ingestion(paper, 'manual_pdf', 'new:primary:' + item.sha256, {'batch_id': batch_id, 'item_id':item.id, 'extracted': item.extracted_metadata, 'reviewed': metadata, 'sha256': item.sha256}, 90, 'upload_review', True)
                 result, saved_asset = self._ingest_asset(c, incoming, asset)
                 if result.created:

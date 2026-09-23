@@ -52,7 +52,7 @@ def main():
         assert result['counts'] == {'acquired': 1}, result['results']
         acquired = result['results'][0]
         after = fingerprints(database)
-        allowed = {'literature_workflow_schema', 'literature_maintenance_actions', 'literature_assets', 'literature_origins'}
+        allowed = {'literature_workflow_schema', 'literature_maintenance_actions', 'literature_assets', 'literature_origins', 'literature_asset_acquisition_state'}
         for table, value in before.items():
             if table not in allowed:
                 assert after[table] == value, table

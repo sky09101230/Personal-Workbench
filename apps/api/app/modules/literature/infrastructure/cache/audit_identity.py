@@ -79,11 +79,14 @@ def audit_identity(database: str | Path) -> dict:
             for row in connection.execute(f"SELECT paper_id FROM {table} ORDER BY paper_id"):
                 if row[0] not in documents:
                     issues.append({"code": "orphan_ownership", "table": table, "paper_id": row[0]})
-        report["unresolved_records"] = [
-            {"id": row["id"], "legacy_id": row["legacy_id"], "reason": row["reason"][:160]}
-            for row in connection.execute("SELECT id,legacy_id,reason FROM literature_identity_conflicts ORDER BY id")
-        ]
-        report["status"] = "needs_review" if issues or report["weak_aliases"] or report["unresolved_records"] else "no_detected_identity_issues"
+        report['conflict_history'] = []
+        for row in connection.execute('SELECT id,legacy_id,reason FROM literature_identity_conflicts ORDER BY id'):
+            latest = connection.execute('SELECT decision FROM literature_conflict_reviews WHERE conflict_id=? ORDER BY rowid DESC LIMIT 1', (row['id'],)).fetchone() if 'literature_conflict_reviews' in tables else None
+            report['conflict_history'].append({'id': row['id'], 'legacy_id': row['legacy_id'], 'reason': row['reason'][:160], 'decision': latest[0] if latest else 'open'})
+        report['unresolved_records'] = [item for item in report['conflict_history'] if item['decision'] in {'open', 'reopen'}]
+        report['quarantined_records'] = [item for item in report['conflict_history'] if item['decision'] == 'quarantine']
+        report['reviewed_records'] = [item for item in report['conflict_history'] if item['decision'] in {'keep_current', 'keep_separate'}]
+        report["status"] = "needs_review" if issues or report["weak_aliases"] or report["unresolved_records"] else 'quarantined_sources' if report['quarantined_records'] else "no_detected_identity_issues"
         return report
 
 

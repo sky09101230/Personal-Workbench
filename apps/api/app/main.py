@@ -93,8 +93,8 @@ def create_app() -> FastAPI:
     app.state.upload_workflow_service = UploadWorkflowService(literature_repository, literature_files, extract_metadata)
     app.state.metadata_review_service = MetadataReviewService(literature_repository)
     app.state.identity_review_service = IdentityReviewService(literature_repository)
-    app.state.zotero_import_service = ZoteroImportService(literature_repository, literature_service.provider)
     app.state.materialization_service = PdfMaterializationService(literature_repository, literature_files, literature_service.provider)
+    app.state.zotero_import_service = ZoteroImportService(literature_repository, literature_service.provider, app.state.materialization_service.acquire_asset)
     app.add_exception_handler(LiteratureError, workflow_error_handler)
     app.add_exception_handler(IdentityConflictError, workflow_error_handler)
     app.state.literature_ai_service = LiteratureAIService(

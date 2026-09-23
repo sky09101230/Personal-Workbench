@@ -44,5 +44,5 @@ class LiteratureIngestionService:
         paper = self.repository.get_paper(paper_id).paper if paper_id else Paper("", title or filename.removesuffix(".pdf"))
         return self.repository.ingest_asset(
             Ingestion(paper, "manual_pdf", origin_key, {"filename": filename, "sha256": digest, "role": role}, 10, "manual_pdf", True),
-            Attachment(f"asset:{uuid4()}", "", filename, "application/pdf", True, "local_file", role=role, storage_kind="local", storage_key=storage_key, sha256=digest),
+            Attachment(f"asset:{uuid4()}", "", filename, "application/pdf", True, "local_file", role=role, storage_kind=self.files.storage_kind, storage_key=storage_key, sha256=digest),
         )

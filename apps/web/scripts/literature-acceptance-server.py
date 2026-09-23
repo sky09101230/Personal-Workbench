@@ -31,6 +31,7 @@ from app.main import app
 from app.modules.literature.application.ai.service import LiteratureAIService
 from app.modules.literature.application.materialization import PdfMaterializationService
 from app.modules.literature.application.zotero_import import ZoteroImportService
+from app.modules.literature.application.errors import PdfUnavailableError
 from app.modules.literature.domain.canonical import Ingestion, IdentityConflictError
 from app.modules.literature.domain.models import Attachment, ChangedPaper, Collection, ExternalReference, LibraryChanges, Note, Paper, PaperPage, ProviderFile
 from tests.test_literature_ai_service import _Context, _Provider
@@ -73,6 +74,8 @@ class Connector:
         return ProviderFile(asset.filename, "application/pdf", (pdf("Connector PDF"),))
 
     def describe_attachment(self, asset):
+        if asset.external_ref and asset.external_ref.item_key in {'TWO', 'MISSING'}:
+            raise PdfUnavailableError('Fixture source is unavailable')
         return replace(asset, paper_id=asset.source_paper_id or asset.paper_id, content_version=asset.content_version or 'fixture-version')
 
 
@@ -81,8 +84,8 @@ repository = app.state.upload_workflow_service.repository
 files = app.state.upload_workflow_service.files
 connector = Connector()
 object.__setattr__(literature, "provider", connector)
-app.state.zotero_import_service = ZoteroImportService(repository, connector)
 app.state.materialization_service = PdfMaterializationService(repository, files, connector)
+app.state.zotero_import_service = ZoteroImportService(repository, connector, app.state.materialization_service.acquire_asset)
 app.state.literature_ai_service = LiteratureAIService(literature, _Provider(), _Context(), repository)
 paper_id = repository.ingest(Ingestion(Paper("", "Metadata review sample", ("Test Author",)), "manual_pdf", "fixture-review")).paper_id
 review = app.state.metadata_review_service
@@ -94,6 +97,9 @@ source_paper = Paper('fixture:evidence', 'Evidence review acceptance', ('Review 
 evidence_paper_id = repository.ingest(Ingestion(source_paper, 'zotero_import', source_paper.id, source='zotero')).paper_id
 repository.ingest(Ingestion(replace(source_paper, title='Reviewed source title'), 'zotero_import', source_paper.id, {'library_version': '2'}, 999, 'zotero'))
 repository.ingest(Ingestion(Paper('', 'Another identifier owner', doi='10.1234/owned'), 'manual', 'owned'))
+missing_paper = repository.ingest(Ingestion(Paper('fixture:missing', 'Unavailable source sample', doi='10.1234/missing'), 'manual', 'missing')).paper_id
+missing_source = repository.add_asset(Attachment('fixture:missing-file', 'fixture:missing', 'missing.pdf', 'application/pdf', True, external_ref=ExternalReference('zotero', 'fixture', 'MISSING')))
+repository.record_asset_failure(missing_source, 'source_unavailable')
 preprint_id = repository.ingest(Ingestion(Paper('', 'Identity preprint sample', ('Review Author',), year=2026, arxiv_id='2609.54321'), 'manual', 'identity-preprint')).paper_id
 published_id = repository.ingest(Ingestion(Paper('', 'Version publication sample', ('Review Author',), year=2026, doi='10.1234/version'), 'manual', 'identity-published')).paper_id
 app.state.literature_ingestion_service.upload_pdf(pdf('Owned identity sample'), 'identity.pdf', paper_id=published_id)

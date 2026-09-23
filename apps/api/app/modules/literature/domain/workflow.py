@@ -91,6 +91,7 @@ class AssetAcquisitionResult:
     size_bytes: int | None = None
     observed_version: str | None = None
     error: str | None = None
+    filename: str | None = None
 
 
 @dataclass(frozen=True)

@@ -52,7 +52,7 @@ class UploadWorkflowService:
             raise WorkflowConflictError("Batch is empty")
         results = []
         for item in batch.items:
-            result = self.repository.confirm_upload(batch_id, item.id, lambda key,digest: self.files.finalize_pdf(key,digest,keep_staging=True))
+            result = self.repository.confirm_upload(batch_id, item.id, lambda key,digest: self.files.finalize_pdf(key,digest,keep_staging=True), storage_kind=self.files.storage_kind)
             results.append(result)
             if result["status"] in {"confirmed", "already_confirmed"}:
                 try:

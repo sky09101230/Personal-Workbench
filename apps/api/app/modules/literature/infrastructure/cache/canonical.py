@@ -20,7 +20,7 @@ from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureR
 from app.modules.literature.application.errors import MigrationRequiredError, WorkflowConflictError
 from app.modules.literature.domain.workflow import METADATA_FIELDS, metadata_patch, metadata_snapshot
 
-_WORKFLOW_SCHEMA_VERSION = 5
+_WORKFLOW_SCHEMA_VERSION = 6
 
 
 _SCHEMA = (
@@ -47,6 +47,7 @@ _SCHEMA = (
     "CREATE TABLE literature_conflict_reviews (id TEXT PRIMARY KEY, conflict_id TEXT NOT NULL REFERENCES literature_identity_conflicts(id), decision TEXT NOT NULL, reason TEXT NOT NULL, context_json TEXT NOT NULL, created_at TEXT NOT NULL)",
     "CREATE TABLE literature_paper_versions (id TEXT PRIMARY KEY, preprint_id TEXT NOT NULL REFERENCES literature_documents(id), published_id TEXT NOT NULL REFERENCES literature_documents(id), status TEXT NOT NULL, evidence_json TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(preprint_id,published_id))",
     "CREATE TABLE literature_asset_copies (source_asset_id TEXT PRIMARY KEY REFERENCES literature_assets(id), source_snapshot_json TEXT NOT NULL, observed_snapshot_json TEXT NOT NULL, asset_id TEXT NOT NULL REFERENCES literature_assets(id), sha256 TEXT NOT NULL, copied_at TEXT NOT NULL)",
+    "CREATE TABLE literature_asset_acquisition_state (source_asset_id TEXT PRIMARY KEY REFERENCES literature_assets(id), source_snapshot_json TEXT NOT NULL, status TEXT NOT NULL, error TEXT, recorded_at TEXT NOT NULL)",
     # Indexes
     "CREATE INDEX literature_assets_paper_idx ON literature_assets(paper_id)",
     "CREATE INDEX literature_origins_paper_idx ON literature_origins(paper_id)",
@@ -146,7 +147,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             c.execute("CREATE TABLE IF NOT EXISTS literature_state_edits (paper_id TEXT PRIMARY KEY, edited_at TEXT NOT NULL)")
             c.execute("CREATE TABLE IF NOT EXISTS literature_maintenance_actions (name TEXT PRIMARY KEY, report_json TEXT NOT NULL, applied_at TEXT NOT NULL)")
             c.execute("INSERT OR IGNORE INTO literature_workflow_schema VALUES (2,?)", (_now(),))
-            for version, name in ((3, 'metadata_evidence_schema'), (4, 'identity_review_schema'), (5, 'owned_assets_schema')):
+            for version, name in ((3, 'metadata_evidence_schema'), (4, 'identity_review_schema'), (5, 'owned_assets_schema'), (6, 'library_readiness_schema')):
                 if not c.execute('SELECT 1 FROM literature_workflow_schema WHERE version=?', (version,)).fetchone():
                     c.execute('INSERT INTO literature_workflow_schema VALUES (?,?)', (version, _now()))
                     c.execute('INSERT OR IGNORE INTO literature_maintenance_actions VALUES (?,?,?)', (name, _json({'schema_version': version, 'backup': upgrade_backup, 'canonical_values_changed': 0}), _now()))
@@ -488,9 +489,36 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         self._require_canonical()
         with self._connect() as c:
             row = c.execute('SELECT a.payload_json,m.source_snapshot_json FROM literature_asset_copies m JOIN literature_assets a ON a.id=m.asset_id WHERE m.source_asset_id=? AND a.paper_id=? AND a.active=1', (source.id, source.paper_id)).fetchone()
-            if not row or (require_current_source and row[1] != _json(asdict(source))):
+            if not row or (require_current_source and _attachment(json.loads(row[1])) != source):
                 return None
             return _attachment(json.loads(row[0]))
+
+    @staticmethod
+    def _asset_state(c, source):
+        row = c.execute('SELECT source_snapshot_json,status,error,recorded_at FROM literature_asset_acquisition_state WHERE source_asset_id=?', (source.id,)).fetchone()
+        if row and _attachment(json.loads(row[0])) == source:
+            return {'status': row[1], 'error': row[2], 'recorded_at': row[3]}
+        return None
+
+    def asset_acquisition_state(self, source):
+        self._require_canonical()
+        with self._connect() as c:
+            return self._asset_state(c, source)
+
+    def record_asset_failure(self, source, error):
+        if not isinstance(error, str) or not error or len(error) > 100:
+            raise ValueError('Invalid acquisition error code')
+        self._require_canonical()
+        with self._connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            row = c.execute('SELECT payload_json,active FROM literature_assets WHERE id=?', (source.id,)).fetchone()
+            if not row or replace(_attachment(json.loads(row[0])), active=bool(row[1])) != source:
+                return False
+            current = self._asset_state(c, source)
+            if current and current['status'] == 'failed' and current['error'] == error:
+                return False
+            c.execute("INSERT INTO literature_asset_acquisition_state VALUES (?,?,'failed',?,?) ON CONFLICT(source_asset_id) DO UPDATE SET source_snapshot_json=excluded.source_snapshot_json,status='failed',error=excluded.error,recorded_at=excluded.recorded_at", (source.id, _json(asdict(source)), error, _now()))
+            return True
 
     def record_owned_asset(self, source, asset, observed, size_bytes):
         self._require_canonical()
@@ -510,6 +538,7 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
             saved = saved or self._asset(c, replace(asset, role=source.role))
             now = _now()
             c.execute('INSERT INTO literature_asset_copies VALUES (?,?,?,?,?,?) ON CONFLICT(source_asset_id) DO UPDATE SET source_snapshot_json=excluded.source_snapshot_json,observed_snapshot_json=excluded.observed_snapshot_json,asset_id=excluded.asset_id,sha256=excluded.sha256,copied_at=excluded.copied_at', (source.id, _json(asdict(source)), _json(asdict(observed)), saved.id, saved.sha256, now))
+            c.execute("INSERT INTO literature_asset_acquisition_state VALUES (?,?,'acquired',NULL,?) ON CONFLICT(source_asset_id) DO UPDATE SET source_snapshot_json=excluded.source_snapshot_json,status='acquired',error=NULL,recorded_at=excluded.recorded_at", (source.id, _json(asdict(source)), now))
             evidence = {'method': 'verified_asset_acquisition', 'source_asset': source.id, 'source_snapshot': asdict(source), 'observed_snapshot': asdict(observed), 'owned_asset': saved.id, 'sha256': saved.sha256, 'size_bytes': size_bytes}
             origin_key = _id('acquisition', _json(evidence))
             c.execute("INSERT OR IGNORE INTO literature_origins VALUES ('zotero_materialization',?,?,?,?)", (origin_key, source.paper_id, _json(evidence), now))
@@ -578,13 +607,17 @@ class SQLiteCanonicalRepository(SQLiteLiteratureRepository):
         paper = _paper(json.loads(row["metadata_json"]))
         sources = {r[0] for r in c.execute("SELECT provider FROM literature_source_references WHERE paper_id=? AND active=1", (paper.id,))}
         origin_kinds = tuple(sorted({r[0] for r in c.execute("SELECT kind FROM literature_origins WHERE paper_id=?", (paper.id,))}))
-        pdf = any(json.loads(r[0]).get("downloadable") and json.loads(r[0]).get("content_type") == "application/pdf" for r in c.execute("SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1", (paper.id,)))
+        pdfs = [_attachment(json.loads(r[0])) for r in c.execute("SELECT payload_json FROM literature_assets WHERE paper_id=? AND active=1", (paper.id,)) if json.loads(r[0]).get('content_type') == 'application/pdf']
+        pdf = any(asset.downloadable for asset in pdfs)
+        owned = [asset for asset in pdfs if asset.storage_kind != 'zotero' and asset.sha256 and asset.storage_key]
+        states = [self._asset_state(c, asset) for asset in pdfs if asset.storage_kind == 'zotero']
+        pdf_state = 'owned_primary' if any(asset.role in {'primary', 'preprint'} for asset in owned) else 'owned_files' if owned else 'needs_recovery' if states and all(state and state['status'] == 'failed' for state in states) else 'source_only' if pdfs else 'none'
         priorities = json.loads(row["field_priority_json"])
         pending = c.execute("SELECT 1 FROM literature_metadata_proposals WHERE paper_id=? AND status='pending' LIMIT 1", (paper.id,)).fetchone()
         reviewed = all(priorities.get(field, {}).get("reviewed", False) for field, value in metadata_snapshot(paper).items() if value not in (None, "", [], ()))
         review_status = "conflict" if paper.metadata_status == "conflict" else "needs_review" if pending else "reviewed" if reviewed else "unreviewed"
         identity_status = self._identity_status(c, paper)
-        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf, metadata_review_status=review_status, identity_status=identity_status)
+        return replace(paper, reading_status=row["reading_status"], sources=tuple(sorted(sources)), origins=origin_kinds, pdf_available=pdf, pdf_state=pdf_state, metadata_review_status=review_status, identity_status=identity_status)
 
     @staticmethod
     def _identity_status(c, paper):

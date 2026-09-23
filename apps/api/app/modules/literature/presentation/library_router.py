@@ -8,7 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from app.modules.literature.application.ingestion import LiteratureIngestionService
 from app.modules.literature.application.errors import LiteratureResourceNotFoundError
 from app.modules.literature.domain.canonical import IdentityConflictError
-from app.modules.literature.domain.workflow import MaterializationResult, BatchMaterializationResult
+from app.modules.literature.domain.workflow import MaterializationResult, BatchMaterializationResult, AssetAcquisitionResult
 
 
 router = APIRouter()
@@ -190,6 +190,11 @@ def get_materialization(request: Request):
     if not svc:
         raise HTTPException(503, detail={"code": "materialization_unavailable"})
     return svc
+
+
+@router.post('/papers/{paper_id}/assets/{asset_id}/acquire', response_model=AssetAcquisitionResult)
+def acquire_source_asset(paper_id: str, asset_id: str, service=Depends(get_materialization)):
+    return asdict(service.acquire_paper_asset(paper_id, asset_id))
 
 
 class BatchMaterializeRequest(BaseModel):

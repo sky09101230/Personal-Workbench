@@ -41,6 +41,7 @@ def _resolved(path: Path) -> Path:
 
 
 class LocalLiteratureFiles:
+    storage_kind = 'local'
     def __init__(self, root: str) -> None:
         self.root = _resolved(Path(root))
         self.staging = self.root / "staging"
@@ -114,7 +115,7 @@ class LocalLiteratureFiles:
                 _validate_pdf(stream)
                 os.fsync(stream.fileno())
             os.link(temporary, target)
-            return StagedPdf(key, digest.hexdigest(), source_hash.hexdigest(), size, 'local')
+            return StagedPdf(key, digest.hexdigest(), source_hash.hexdigest(), size, self.storage_kind)
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
@@ -187,7 +188,7 @@ class LocalLiteratureFiles:
         return removed
 
     def _verified_open(self, asset: Attachment):
-        if asset.storage_kind != "local":
+        if asset.storage_kind != self.storage_kind:
             raise LocalAssetError("unsupported_backend")
         key = asset.storage_key or ""
         if not re.fullmatch(r"[a-f0-9]{64}\.pdf", key) or asset.sha256 not in (None, key[:-4]):

@@ -74,7 +74,7 @@ def test_acquisition_preserves_research_rows_and_reads_owned_offline(acquisition
     assert provider.downloads == provider.closed == 1 and provider.descriptions == 2
     after = fingerprints(repository._database_path)
     for table in before:
-        if table not in {'literature_assets', 'literature_asset_copies', 'literature_origins'}:
+        if table not in {'literature_assets', 'literature_asset_copies', 'literature_origins', 'literature_asset_acquisition_state'}:
             assert before[table] == after[table], table
     with repository._connect() as c:
         stored = json.loads(c.execute('SELECT payload_json FROM literature_assets WHERE id=?', (source.id,)).fetchone()[0])

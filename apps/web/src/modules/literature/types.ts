@@ -35,6 +35,7 @@ export type Paper = {
   arxiv_id?: string | null;
   openalex_id?: string | null;
   pdf_available: boolean;
+  pdf_state?: "owned_primary" | "owned_files" | "source_only" | "needs_recovery" | "none";
   metadata_status: string;
   metadata_review_status?: string;
   identity_status?: string;
@@ -218,5 +219,6 @@ export type UploadItem = {
   candidate_metadata: MetadataPatch; warnings: string[]; target_paper_id?: string; error?: string;
 };
 export type UploadBatch = { id: string; status: string; items: UploadItem[] };
-export type WorkflowResult = { status: string; paper_id?: string; error?: string; item_id?: string; item_key?: string };
+export type AssetAcquisition = { source_asset_id: string; status: string; filename?: string | null; error?: string | null; asset_id?: string | null };
+export type WorkflowResult = { status: string; paper_id?: string; error?: string; item_id?: string; item_key?: string; asset_results?: AssetAcquisition[] };
 export type ZoteroItem = Paper & { import_status: string; canonical_id: string | null };

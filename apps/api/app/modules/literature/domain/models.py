@@ -29,6 +29,7 @@ class Paper:
     sources: tuple[str, ...] = ()
     origins: tuple[str, ...] = ()
     pdf_available: bool = False
+    pdf_state: str = "none"
     metadata_status: str = "incomplete"
     metadata_review_status: str = "unreviewed"
     identity_status: str = "unresolved"
@@ -93,6 +94,8 @@ class AssetIntegrity:
     state: str
     size_bytes: int | None = None
     sha256: str | None = None
+    owned_asset_id: str | None = None
+    acquisition_error: str | None = None
 
 
 @dataclass(frozen=True)

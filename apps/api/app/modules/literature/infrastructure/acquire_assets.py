@@ -130,7 +130,7 @@ def main():
                     output.write(line + '\n')
                     output.flush()
                     os.fsync(output.fileno())
-                    print(line, flush=True)
+                    print(json.dumps(value, ensure_ascii=True), flush=True)
                 result = apply_acquisition(plan, args.database, root, provider, offset=args.offset, limit=args.limit, asset_ids=args.asset_id, refresh=args.refresh, on_result=event, local_zotero=args.zotero_data_dir)
                 event({key: value for key, value in result.items() if key != 'results'})
                 print(json.dumps({'report': str(report.resolve())}), flush=True)

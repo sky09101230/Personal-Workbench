@@ -94,7 +94,7 @@ function ZoteroImport({ providerReady, onImported }: { providerReady: boolean; o
   }, [providerReady, collection, offset, revision]);
   const importedIds = [...new Set(results.filter((item) => ["imported", "already_exists"].includes(item.status) && item.paper_id).map((item) => item.paper_id!))];
   if (!providerReady) return <p>尚未配置 Zotero 连接器。请在后端配置后浏览来源集合并选择条目。</p>;
-  return <section><h3>Zotero 选择性导入</h3><p>选择要导入的条目，带入元数据、来源笔记和文件引用；随后可将 PDF 保存为 Workbench 本地文件。</p>
+  return <section><h3>Zotero 选择性导入</h3><p>选择条目后导入元数据和来源笔记，并尝试保存全部可用 PDF（含补充材料）。无法获取的文件会单独报告，已导入文献保留，可在文件页重试。</p>
     <label>来源集合<select disabled={busy} value={collection} onChange={(e) => { setCollection(e.target.value); setOffset(0); setSelected([]); }}><option value="">全部 Zotero 条目</option>{collections.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
     {error && <p role="alert" className="wb-error">{error} <button onClick={() => setRevision((n) => n + 1)}>重试</button></p>}
     {loading ? <p role="status">正在加载连接器条目…</p> : <><div className="wb-actions"><button disabled={busy || !items.length} onClick={() => setSelected(items.map((item) => item.id))}>选择本页</button><button disabled={busy} onClick={() => setSelected([])}>清空选择</button><span>已选择 {selected.length} 项</span></div>
@@ -111,12 +111,12 @@ function ZoteroImport({ providerReady, onImported }: { providerReady: boolean; o
       setBusy(true); setError("");
       void postJson<{ results: WorkflowResult[] }>("/api/literature/papers/materialize-pdfs", { paper_ids: importedIds })
         .then((response) => setLocalResults(response.results)).catch((e) => setError(workflowError(e))).finally(() => setBusy(false));
-    }}>将已导入文献的 PDF 保存到本地</button>}
+    }}>重试已导入文献的主 PDF</button>}
     <WorkflowResults results={localResults} onImported={onImported} />
   </section>;
 }
 
 function WorkflowResults({ results, onImported }: { results: WorkflowResult[]; onImported: (id: string) => void }) {
   if (!results.length) return null;
-  return <div className="wb-results" role="status"><h4>逐项处理结果</h4>{results.map((result, index) => <p key={index}><strong>{literatureLabel(result.status)}</strong> · {result.item_key || result.item_id || result.paper_id}{result.error && ` · ${result.error}`} {result.paper_id && <button onClick={() => onImported(result.paper_id!)}>打开文献</button>}</p>)}</div>;
+  return <div className="wb-results" role="status"><h4>逐项处理结果</h4>{results.map((result, index) => <article key={index}><p><strong>{literatureLabel(result.status)}</strong> · {result.item_key || result.item_id || result.paper_id}{result.error && ` · ${literatureLabel(result.error)}`} {result.paper_id && <button onClick={() => onImported(result.paper_id!)}>打开文献</button>}</p>{result.asset_results?.map((asset) => <p key={asset.source_asset_id}>{asset.filename || 'PDF 附件'} · {literatureLabel(asset.status)}{asset.error && ` · ${literatureLabel(asset.error)}`}</p>)}</article>)}</div>;
 }
