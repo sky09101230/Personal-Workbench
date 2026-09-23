@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { getJson, postJson, uploadPdf, workflowError } from "../api";
 import { patchJson } from "../../../core/api";
 import type { Collection, UploadBatch, UploadItem, WorkflowResult, ZoteroItem } from "../types";
+import { LocalZoteroConnection } from './LocalZoteroConnection';
+import { localConnected, localError, recoverLocalPaper } from '../localZotero';
 import { MetadataForm, metadataText } from "./MetadataForm";
 
 const batchStorage = "workbench.literature.upload-batch";
@@ -70,6 +72,7 @@ function PdfBatch({ onImported }: { onImported: (id: string) => void }) {
 }
 
 function ZoteroImport({ providerReady, onImported }: { providerReady: boolean; onImported: (id: string) => void }) {
+  const [fileSource, setFileSource] = useState<'server' | 'local'>('server');
   const [collections, setCollections] = useState<Collection[]>([]);
   const [collection, setCollection] = useState("");
   const [items, setItems] = useState<ZoteroItem[]>([]);
@@ -95,6 +98,8 @@ function ZoteroImport({ providerReady, onImported }: { providerReady: boolean; o
   const importedIds = [...new Set(results.filter((item) => ["imported", "already_exists"].includes(item.status) && item.paper_id).map((item) => item.paper_id!))];
   if (!providerReady) return <p>尚未配置 Zotero 连接器。请在后端配置后浏览来源集合并选择条目。</p>;
   return <section><h3>Zotero 选择性导入</h3><p>选择条目后导入元数据和来源笔记，并尝试保存全部可用 PDF（含补充材料）。无法获取的文件会单独报告，已导入文献保留，可在文件页重试。</p>
+    <label>PDF 获取位置<select value={fileSource} disabled={busy} onChange={e => setFileSource(e.target.value as 'server' | 'local')}><option value="server">API 服务端 Zotero</option><option value="local">当前电脑 Zotero（本机代理）</option></select></label>
+    {fileSource === 'local' && <LocalZoteroConnection busy={busy} />}
     <label>来源集合<select disabled={busy} value={collection} onChange={(e) => { setCollection(e.target.value); setOffset(0); setSelected([]); }}><option value="">全部 Zotero 条目</option>{collections.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
     {error && <p role="alert" className="wb-error">{error} <button onClick={() => setRevision((n) => n + 1)}>重试</button></p>}
     {loading ? <p role="status">正在加载连接器条目…</p> : <><div className="wb-actions"><button disabled={busy || !items.length} onClick={() => setSelected(items.map((item) => item.id))}>选择本页</button><button disabled={busy} onClick={() => setSelected([])}>清空选择</button><span>已选择 {selected.length} 项</span></div>
@@ -102,9 +107,22 @@ function ZoteroImport({ providerReady, onImported }: { providerReady: boolean; o
       {items.map((item) => <label className="wb-source-item" key={item.id}><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={(e) => setSelected((current) => e.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} /><span><strong>{item.title}</strong><small>{item.authors.join(", ")} · {item.year || "年份未知"} · {literatureLabel(item.import_status)}</small></span></label>)}
       <div className="wb-actions"><button disabled={busy || offset === 0} onClick={() => { setOffset(offset - 25); setSelected([]); }}>上一页</button><span>{total ? offset + 1 : 0}–{Math.min(offset + 25, total)} / {total}</span><button disabled={busy || offset + 25 >= total} onClick={() => { setOffset(offset + 25); setSelected([]); }}>下一页</button></div></>}
     <button disabled={busy || loading || !selected.length} onClick={() => {
+      if (fileSource === 'local' && !localConnected()) { setError(localError(new Error('pairing_required'))); return; }
       setBusy(true); setError(""); setLocalResults([]);
-      void postJson<{ results: WorkflowResult[] }>("/api/literature/imports/zotero/selective", { item_keys: selected })
-        .then((response) => { setResults(response.results); setSelected([]); setRevision((n) => n + 1); }).catch((e) => setError(workflowError(e))).finally(() => setBusy(false));
+      void postJson<{ results: WorkflowResult[] }>("/api/literature/imports/zotero/selective", { item_keys: selected, file_source: fileSource })
+        .then(async (response) => {
+          setResults(response.results);
+          if (fileSource === 'local') {
+            for (const result of response.results) {
+              if (result.paper_id && ['imported', 'already_exists'].includes(result.status)) {
+                try { result.asset_results = await recoverLocalPaper(result.paper_id); }
+                catch (e) { result.error = localError(e); }
+                setResults([...response.results]);
+              }
+            }
+          }
+          setSelected([]); setRevision((n) => n + 1);
+        }).catch((e) => setError(workflowError(e))).finally(() => setBusy(false));
     }}>{busy ? "正在处理…" : "导入所选条目"}</button>
     <WorkflowResults results={results} onImported={onImported} />
     {!!importedIds.length && <button disabled={busy} onClick={() => {

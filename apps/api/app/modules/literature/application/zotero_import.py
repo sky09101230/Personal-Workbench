@@ -38,7 +38,7 @@ class ZoteroImportService:
             items.append({**asdict(paper), "import_status": "imported" if existing else "available", "canonical_id": existing.paper.id if existing else None})
         return {"items": items, "total": page.total}
 
-    def import_selected(self, item_keys):
+    def import_selected(self, item_keys, *, acquire_files=True):
         if not 1 <= len(item_keys) <= 100:
             raise ValueError("Select between 1 and 100 items")
         results = []
@@ -48,7 +48,7 @@ class ZoteroImportService:
                 changes = self.provider.get_import_item(identifier)
                 result = self.repository.import_selected_item(changes)
                 assets = []
-                if self.acquire_asset:
+                if self.acquire_asset and acquire_files:
                     source_paper_id = changes.papers[0].paper.id
                     for source in self.repository.list_attachments(result.paper_id):
                         if source.storage_kind != 'zotero' or source.source_paper_id != source_paper_id or not source.active or not source.downloadable or source.content_type != 'application/pdf':

@@ -24,6 +24,8 @@ from app.modules.literature.application.upload import UploadWorkflowService
 from app.modules.literature.application.review import MetadataReviewService
 from app.modules.literature.application.zotero_import import ZoteroImportService
 from app.modules.literature.application.materialization import PdfMaterializationService
+from app.modules.literature.application.local_transfer import LocalTransferService
+from app.modules.literature.presentation.local_transfer_router import router as local_transfer_router
 from app.modules.literature.application.errors import LiteratureError
 from app.modules.literature.domain.canonical import IdentityConflictError
 from app.modules.literature.presentation.upload_router import router as upload_router
@@ -94,6 +96,7 @@ def create_app() -> FastAPI:
     app.state.metadata_review_service = MetadataReviewService(literature_repository)
     app.state.identity_review_service = IdentityReviewService(literature_repository)
     app.state.materialization_service = PdfMaterializationService(literature_repository, literature_files, literature_service.provider)
+    app.state.local_transfer_service = LocalTransferService(literature_repository, literature_files)
     app.state.zotero_import_service = ZoteroImportService(literature_repository, literature_service.provider, app.state.materialization_service.acquire_asset)
     app.add_exception_handler(LiteratureError, workflow_error_handler)
     app.add_exception_handler(IdentityConflictError, workflow_error_handler)
@@ -132,6 +135,7 @@ def create_app() -> FastAPI:
 
     app.include_router(literature_router, prefix="/api/literature", tags=["literature"])
     app.include_router(canonical_library_router, prefix="/api/literature", tags=["literature-library"])
+    app.include_router(local_transfer_router, prefix="/api/literature", tags=["literature-local-transfer"])
     app.include_router(upload_router, prefix="/api/literature", tags=["literature-uploads"])
     app.include_router(review_router, prefix="/api/literature", tags=["literature-metadata"])
     app.include_router(identity_router, prefix="/api/literature", tags=["literature-identity"])

@@ -161,6 +161,7 @@ def get_zotero_import(request: Request):
 class SelectiveImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     item_keys: list[str] = Field(min_length=1, max_length=100)
+    file_source: Literal['server', 'local'] = 'server'
 
 
 @router.get("/imports/zotero/collections")
@@ -180,7 +181,7 @@ def zotero_importable(
 
 @router.post("/imports/zotero/selective")
 def zotero_selective_import(payload: SelectiveImportRequest, service=Depends(get_zotero_import)):
-    return {"results": [asdict(r) for r in service.import_selected(payload.item_keys)]}
+    return {"results": [asdict(r) for r in service.import_selected(payload.item_keys, acquire_files=payload.file_source == 'server')]}
 
 
 # --- PDF materialization ---

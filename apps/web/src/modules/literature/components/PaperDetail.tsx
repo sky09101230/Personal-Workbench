@@ -8,6 +8,7 @@ import { LiteratureAIAssistant } from "./LiteratureAIAssistant";
 import { MetadataReview } from "./MetadataReview";
 import { IdentityReview } from "./IdentityReview";
 import { AssetIntegrity } from "./AssetIntegrity";
+import { LocalZoteroRecovery } from "./LocalZoteroRecovery";
 
 type Provenance = MetadataProvenance & { references: Record<string, unknown>[]; origins: Record<string, unknown>[]; source_collections: unknown[]; conflicts: unknown[]; identifiers: unknown[] };
 function OriginEvidence({ evidence }: { evidence: unknown }) {
@@ -47,6 +48,7 @@ export function PaperDetail({ paperId, onBack, onChanged }: { paperId: string; o
       <nav className="wb-subtabs" aria-label="文献详情分区">{["元数据", "文件", "外部来源", "入库途径", "笔记", "AI"].map((value) => <button key={value} aria-pressed={tab === value} onClick={() => setTab(value)}>{value}</button>)}</nav>
       <p>文件状态：{literatureLabel(detail.paper.pdf_state ?? (detail.pdf_available ? 'source_only' : 'none'))}。文件页会校验当前受管副本。</p>
       {tab === "文件" && <AssetIntegrity paperId={detail.paper.id} files={files} />}
+      {tab === "文件" && <LocalZoteroRecovery paperId={detail.paper.id} files={files} onChanged={refresh} />}
       {tab === "元数据" && <>
         <dl className="wb-metadata">{["doi", "arxiv_id", "openalex_id", "abstract"].map((field) => <div key={field}><dt>{literatureLabel(field)}</dt><dd>{String(detail.paper[field as "doi"] || "未记录")}</dd></div>)}</dl>
         <div className="wb-filters"><label>阅读状态<select disabled={busy} value={detail.paper.reading_status} onChange={(e) => void act(async () => { await patchJson(`${base}/state`, { reading_status: e.target.value }); refresh(); })}>{["inbox", "saved", "reading", "read", "archived"].map((value) => <option key={value} value={value}>{literatureLabel(String(value))}</option>)}</select></label><label>标签（使用英文逗号分隔）<input value={tags} onChange={(e) => setTags(e.target.value)} /></label><button disabled={busy} onClick={() => void act(async () => { await patchJson(`${base}/state`, { tags: tags.split(",").map((value) => value.trim()).filter(Boolean) }); refresh(); })}>保存标签</button></div>
