@@ -25,6 +25,7 @@ from app.modules.literature.infrastructure.cache.workflows import SQLiteLiteratu
 from app.modules.literature.infrastructure.cache.sqlite import SQLiteLiteratureRepository
 from app.modules.literature.infrastructure.files import LocalLiteratureFiles
 from app.modules.literature.infrastructure.extraction import extract_metadata
+from app.modules.literature.infrastructure import extraction as extraction_module
 from app.modules.literature.infrastructure.providers.zotero.provider import ZoteroWebProvider
 from .test_canonical_api import NoZotero, pdf_bytes
 
@@ -219,6 +220,49 @@ def test_extraction_metadata_and_no_text_warning():
     assert result.year.value==2026 and result.year.confidence=='low'
     assert 'short_text' in result.warnings and 'file_date_is_not_publication_date' in result.warnings
     assert extract_metadata(b'invalid').warnings==('invalid_pdf',)
+
+
+def test_extraction_uses_ocr_and_verifies_doi_title(monkeypatch):
+    writer = PdfWriter()
+    writer.add_blank_page(width=100, height=100)
+    writer.add_metadata({'/Title': 'All-optical machine learning using diffractive deep neural networks'})
+    stream = io.BytesIO(); writer.write(stream)
+    monkeypatch.setattr(extraction_module, '_ocr_text', lambda data, pages: 'doi: 10.1126/ science.aat8084')
+    monkeypatch.setattr(extraction_module, '_lookup_doi_title', lambda doi: 'All-optical machine learning using diffractive deep neural networks')
+
+    result = extract_metadata(stream.getvalue())
+
+    assert result.doi.value == '10.1126/science.aat8084'
+    assert result.doi.source == 'doi_lookup' and result.doi.confidence == 'high'
+    assert 'ocr_used' in result.warnings
+
+
+def test_extraction_rejects_doi_with_mismatched_title(monkeypatch):
+    writer = PdfWriter(); writer.add_blank_page(width=100, height=100)
+    writer.add_metadata({'/Title': 'Different paper'})
+    stream = io.BytesIO(); writer.write(stream)
+    monkeypatch.setattr(extraction_module, '_ocr_text', lambda data, pages: '10.1126/science.aat8084')
+    monkeypatch.setattr(extraction_module, '_lookup_doi_title', lambda doi: 'All-optical machine learning using diffractive deep neural networks')
+
+    result = extract_metadata(stream.getvalue())
+
+    assert result.doi is None
+    assert 'doi_title_mismatch' in result.warnings and 'missing_doi' in result.warnings
+
+
+def test_doi_metadata_replaces_file_year(monkeypatch):
+    writer = PdfWriter(); writer.add_blank_page(width=100, height=100)
+    writer.add_metadata({'/Title': 'All-optical machine learning using diffractive deep neural networks', '/CreationDate': 'D:20230901000000'})
+    stream = io.BytesIO(); writer.write(stream)
+    monkeypatch.setattr(extraction_module, '_ocr_text', lambda data, pages: '10.1126/science.aat8084')
+    monkeypatch.setattr(extraction_module, '_lookup_doi_title', lambda doi: 'All-optical machine learning using diffractive deep neural networks')
+    monkeypatch.setattr(extraction_module, '_fetch_doi_bibtex', lambda doi: {'year': '2018', 'journal': 'Science'})
+    monkeypatch.setattr(extraction_module, '_fetch_crossref_work', lambda doi: {'year': 2018, 'journal': 'Science', 'doi': doi})
+
+    result = extract_metadata(stream.getvalue())
+
+    assert result.year.value == 2018 and result.year.source == 'doi_crossref'
+    assert result.journal.value == 'Science'
 
 
 def test_selective_import_and_materialization(workflow,override_service):

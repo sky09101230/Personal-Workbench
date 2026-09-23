@@ -215,7 +215,7 @@ export type IdentityContext = {
 };
 export type UploadItem = {
   id: string; filename: string; status: string;
-  extracted_metadata: Record<string, { value: unknown; source: string; confidence: string }>;
+  extracted_metadata: Record<string, { value: unknown; source: string; confidence: string; page?: number | null }>;
   candidate_metadata: MetadataPatch; warnings: string[]; target_paper_id?: string; error?: string;
 };
 export type UploadBatch = { id: string; status: string; items: UploadItem[] };

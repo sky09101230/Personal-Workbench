@@ -49,7 +49,7 @@ function PdfBatch({ onImported }: { onImported: (id: string) => void }) {
     });
   };
   const closed = batch?.status === "confirmed" || batch?.status === "cancelled";
-  return <section><h3>1. 暂存 PDF → 2. 审核元数据 → 3. 确认入库</h3><p>确认前不会写入正式文献库。系统提取 PDF 元数据和前三页内容，请核对候选信息。</p>
+  return <section><h3>1. 暂存 PDF → 2. 审核元数据 → 3. 确认入库</h3><p>确认前不会写入正式文献库。系统提取 PDF 元数据、前两页和后两页内容，并在必要时使用 OCR，请核对候选信息。</p>
     {!batch && recoverId && <p>有一个上传批次可继续处理。 <button disabled={busy} onClick={() => void perform(() => refresh(recoverId))}>继续暂存批次</button><button disabled={busy} onClick={() => { localStorage.removeItem(batchStorage); setRecoverId(null); }}>忽略恢复入口</button></p>}
     {!closed && <label className="wb-upload">选择 PDF · 最多 50 个文件，每个不超过 50 MiB<input aria-label="PDF 文件" type="file" accept="application/pdf,.pdf" multiple disabled={busy || (!!recoverId && !batch)} onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; void stage(files); }} /></label>}
     {progress && <p role="status">{progress}</p>}{error && <p className="wb-error" role="alert">{error}</p>}
@@ -58,7 +58,7 @@ function PdfBatch({ onImported }: { onImported: (id: string) => void }) {
         <p>{item.candidate_metadata.title || "需要填写标题"}</p>
         <dl>{Object.entries(item.candidate_metadata).filter(([field]) => field !== "title").map(([field, value]) => <div key={field}><dt>{literatureLabel(field)}</dt><dd>{metadataText(value) || "未记录"}</dd></div>)}</dl>
         {!!item.warnings.length && <details><summary className="wb-warning">提取提示 · {item.warnings.length}</summary><p>以下为原始提取时的提示；上方显示的是审核后的信息。</p>{item.warnings.map((warning, i) => <p className="wb-warning" key={i}>{literatureLabel(warning)}</p>)}</details>}{item.error && <p role="alert">{item.error}</p>}
-        <details><summary>原始提取依据</summary><dl>{Object.entries(item.extracted_metadata).map(([field, evidence]) => <div key={field}><dt>{field}</dt><dd>{metadataText(evidence.value)} <small>· {literatureLabel(evidence.source)} · 置信度：{literatureLabel(evidence.confidence)}</small></dd></div>)}</dl></details>
+        <details><summary>原始提取依据</summary><dl>{Object.entries(item.extracted_metadata).map(([field, evidence]) => <div key={field}><dt>{field}</dt><dd>{metadataText(evidence.value)} <small>· {literatureLabel(evidence.source)}{evidence.page ? ` · 第 ${evidence.page} 页` : ""} · 置信度：{literatureLabel(evidence.confidence)}</small></dd></div>)}</dl></details>
         {!closed && !["confirmed", "cancelled"].includes(item.status) && <><div className="wb-actions"><button disabled={busy} onClick={() => setEditing(item.id)}>审核 / 编辑元数据</button><button disabled={busy} onClick={() => void perform(async () => { await postJson(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(item.id)}/cancel`); await refresh(batch.id); })}>取消此文件</button></div>
           {editing === item.id && <MetadataForm key={`${item.id}-${JSON.stringify(item.candidate_metadata)}`} initial={item.candidate_metadata} busy={busy} onCancel={() => setEditing(null)} onSave={(patch) => void perform(async () => { await patchJson(`/api/literature/uploads/batches/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(item.id)}`, patch); await refresh(batch.id); setEditing(null); })} />}</>}
         {item.target_paper_id && <button onClick={() => onImported(item.target_paper_id!)}>打开正式文献</button>}

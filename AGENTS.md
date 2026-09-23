@@ -1,5 +1,12 @@
 # Repository Guidelines
 
+- 新项目如果尚未初始化 Git，自动执行 `git init`，并补充基础 `.gitignore`。
+- 开始独立的新功能、模块或较大修改前，先检查 `git status`，并创建对应功能分支。
+- 如果当前已经在合适的功能分支上，则直接继续，不重复创建分支。
+- 一个独立任务完成并通过必要验证后，自动提交当前任务相关修改。
+- Commit 使用简洁明确的 Conventional Commit 风格。
+- 不自动 merge 到 `main`，除非任务明确要求。
+
 ## Project Purpose & Structure
 
 Personal Workbench: a local, single-user research workbench with four strictly independent backend modules — Literature (Zotero-backed library reader), News (external feed discovery), Todo (project/task action workbench), and ProjectActivity (external real-work observation). FastAPI backend lives in `apps/api`, and the React + TypeScript frontend lives in `apps/web`.
@@ -53,3 +60,4 @@ Use pytest and name test files `test_*.py` and tests `test_*`. Add or update end
 Feature work happens on `codex/<topic>` branches merged into `main` via pull requests. Commit subjects follow the established conventional style: short imperative with an optional scope, for example `feat(todo): add quick capture`, `test(news): cover trending provider`, `docs(openspec): archive change`. Keep pull requests focused; describe behavior, list verification commands, link the issue when applicable, and include screenshots for UI changes.
 
 Never commit `.env`, credentials, SQLite databases (`*.db`), build output, or dependency directories — `.gitignore` already excludes them. Configuration comes from environment variables documented in `.env.example`: `DATABASE_URL`, `CORS_ORIGINS`, `ZOTERO_USER_ID`, `ZOTERO_API_KEY`, optional `OPENALEX_API_KEY`, and optional DeepSeek settings (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL`) shared by the news summarizer and todo planner. The browser only ever talks to `/api/*`; external services are called from backend infrastructure code.
+

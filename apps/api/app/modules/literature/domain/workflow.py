@@ -9,6 +9,7 @@ class ExtractedField:
     value: Any
     source: str  # 'pdf_metadata', 'first_page_text', 'doi_lookup'
     confidence: str  # 'high', 'medium', 'low'
+    page: int | None = None
 
 
 @dataclass(frozen=True)
